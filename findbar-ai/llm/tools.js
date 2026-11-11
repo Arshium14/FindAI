@@ -11,6 +11,8 @@ import {
 import { openLink } from "../../utils/open-link.js";
 import { bestFuzzyScore } from "../../utils/fuzzy.js";
 import { buildTools } from "../library/build-tools.js";
+import { webResearch } from "../agent/research.js";
+import { createPageInteractionTools } from "../agent/page-interaction.js";
 
 // ╭─────────────────────────────────────────────────────────╮
 // │                 TAB ID MANAGEMENT                       │
@@ -977,32 +979,6 @@ async function reorderWorkspace(args) {
 // │                         ELEMENTS                        │
 // ╰─────────────────────────────────────────────────────────╯
 
-/**
- * Clicks an element on the page.
- * @param {object} args - The arguments object.
- * @param {string} args.selector - The CSS selector of the element to click.
- * @returns {Promise<object>} A promise that resolves with a success message or an error.
- */
-async function clickElement(args, opts) {
-  const { selector } = args || {};
-  if (!selector) return { error: "clickElement requires a selector." };
-  return messageManagerAPI.clickElement(selector, opts);
-}
-
-/**
- * Fills a form input on the page.
- * @param {object} args - The arguments object.
- * @param {string} args.selector - The CSS selector of the input element to fill.
- * @param {string} args.value - The value to fill the input with.
- * @returns {Promise<object>} A promise that resolves with a success message or an error.
- */
-async function fillForm(args, opts) {
-  const { selector, value } = args || {};
-  if (!selector) return { error: "fillForm requires a selector." };
-  if (value === undefined) return { error: "fillForm requires a value." };
-  return messageManagerAPI.fillForm(selector, value, opts);
-}
-
 // ╭─────────────────────────────────────────────────────────╮
 // │                        UI FEEDBACK                      │
 // ╰─────────────────────────────────────────────────────────╯
@@ -1050,6 +1026,7 @@ async function getYoutubeTranscript(args, opts) {
 
 const toolVerbs = {
   search: ["Searching the web", "Searched the web"],
+  webResearch: ["Researching the web", "Researched the web"],
   openLink: ["Opening a link", "Opened link"],
   newSplit: ["Creating a split view", "Created split view"],
   splitExistingTabs: ["Splitting existing tabs", "Split tabs"],
@@ -1065,7 +1042,10 @@ const toolVerbs = {
   removeTabsFromEssentials: ["Removing tabs from Essentials", "Removed from Essentials"],
   getPageTextContent: ["Reading page content", "Read page"],
   getHTMLContent: ["Reading page source code", "Read page source"],
+  inspectPage: ["Inspecting page controls", "Inspected page controls"],
   clickElement: ["Clicking an element", "Clicked element"],
+  typeText: ["Typing text", "Typed text"],
+  pressKey: ["Pressing a key", "Pressed key"],
   fillForm: ["Filling a form", "Filled form"],
   getYoutubeTranscript: ["Getting YouTube transcript", "Got transcript"],
   getYoutubeDescription: ["Getting YouTube description", "Got description"],
@@ -1132,6 +1112,23 @@ const toolGroups = {
 -   **Your second Tool Call:** \`{"functionCall": {"name": "search", "args": {"searchTerm": "dog", "engineName": "youtube", where: "vsplit"}}}\`
 Note: Only second search is open in split (vertial by default), this will make it split with first search.
 `;
+    },
+  },
+  research: {
+    moreInstructions:
+      "webResearch searches in background tabs, reads up to 3 sources, and returns source text and failures. Use it for current or source-backed answers. Cite the returned URLs with Markdown links. Never claim a source was read when its error is set or text is empty.",
+    tools: {
+      webResearch: createTool(
+        "Searches the web and gathers readable sources without opening focused research tabs.",
+        {
+          query: createStringParameter("The search query."),
+          engineName: createStringParameter(
+            "Optional installed search engine name; defaults to the browser default.",
+            true
+          ),
+        },
+        webResearch
+      ),
     },
   },
   navigation: {
@@ -1291,6 +1288,8 @@ Batch independent work into single calls: close/move/group many tabs with one ca
 -   **Your Second Tool Call (after finding the current tab ID):** \`{"functionCall": {"name": "addTabsToEssentials", "args": {"tabIds": ["5"]}}}\``,
   },
   pageInteraction: {
+    moreInstructions:
+      "Use inspectPage before clicking or typing when a selector is not already known. tabId is optional and must come from getAllTabs/searchTabs or a referenced tab. Never invent it. Do not submit a form unless the user explicitly requested submission and submit=true is permitted. Typed values are sensitive and are not returned in tool results.",
     tools: {
       getPageTextContent: createTool(
         "Retrieves the text content of the current web page to answer questions. Only use if the initial context is insufficient to answer user's question or fulfill user's command.",
@@ -1302,21 +1301,7 @@ Batch independent work into single calls: close/move/group many tabs with one ca
         {},
         messageManagerAPI.getHTMLContent.bind(messageManagerAPI)
       ),
-      clickElement: createTool(
-        "Clicks an element on the page.",
-        {
-          selector: createStringParameter("The CSS selector of the element to click."),
-        },
-        clickElement
-      ),
-      fillForm: createTool(
-        "Fills a form input on the page.",
-        {
-          selector: createStringParameter("The CSS selector of the input element to fill."),
-          value: createStringParameter("The value to fill the input with."),
-        },
-        fillForm
-      ),
+      ...createPageInteractionTools((tabId) => TabIdManager.getTabById(tabId)),
     },
     example: async () => `#### Reading the Current Page for Context
 -   **User Prompt:** "summarize this page for me"
@@ -1325,15 +1310,15 @@ Batch independent work into single calls: close/move/group many tabs with one ca
 
 #### Finding and Clicking a Link on the Current Page
 -   **User Prompt:** "click on the contact link"
--   **Your First Tool Call:** \`{"functionCall": {"name": "getHTMLContent", "args": {}}}\`
--   **Your Second Tool Call (after receiving HTML and finding the link):** \`{"functionCall": {"name": "clickElement", "args": {"selector": "#contact-link"}}}\`
+-   **Your First Tool Call:** \`{"functionCall": {"name": "inspectPage", "args": {}}}\`
+-   **Your Second Tool Call (after receiving the matching selector):** \`{"functionCall": {"name": "clickElement", "args": {"selector": "#contact-link"}}}\`
 
 #### Filling a form:
 -   **User Prompt:** "Fill the name with John and submit"
--   **Your First Tool Call:** \`{"functionCall": {"name": "getHTMLContent", "args": {}}}\`
--   **Your Second Tool Call:** \`{"functionCall": {"name": "fillForm", "args": {"selector": "#name", "value": "John"}}}\`
--   **Your Third Tool Call:** \`{"functionCall": {"name": "clickElement", "args": {"selector": "#submit-button"}}}\`
-Note: you must run tool getHTMLContent before clicking button or filling form to make sure element exists.
+-   **Your First Tool Call:** \`{"functionCall": {"name": "inspectPage", "args": {}}}\`
+-   **Your Second Tool Call:** \`{"functionCall": {"name": "typeText", "args": {"selector": "#name", "text": "John", "clear": true}}}\`
+-   **Your Third Tool Call (submission was explicit):** \`{"functionCall": {"name": "clickElement", "args": {"selector": "#submit-button", "submit": true}}}\`
+Note: use inspectPage before clicking or typing when a selector is not already known. Never set submit=true unless the user explicitly requested submission.
 `,
   },
   youtube: {
@@ -1532,6 +1517,27 @@ If tab is essential which means does not belong to any specific workspace.
   },
 };
 
+function toolResultPreview(toolName, result) {
+  if (toolName !== "webResearch" || !result || typeof result !== "object") return result;
+  return {
+    error: result.error || null,
+    query: result.query || "",
+    searchUrl: result.searchUrl || "",
+    results: Array.isArray(result.results)
+      ? result.results.map((item) => ({ title: item?.title || "", url: item?.url || "" }))
+      : [],
+    sources: Array.isArray(result.sources)
+      ? result.sources.map((source) => ({
+          id: source?.id,
+          title: source?.title || "",
+          url: source?.url || "",
+          error: source?.error || null,
+        }))
+      : [],
+    warnings: Array.isArray(result.warnings) ? result.warnings.map(String) : [],
+  };
+}
+
 const getTools = (groups, { shouldToolBeCalled, afterToolCall } = {}) => {
   const selectedTools = groups.reduce((acc, groupName) => {
     if (toolGroups[groupName] && toolGroups[groupName].tools) {
@@ -1552,12 +1558,19 @@ const getTools = (groups, { shouldToolBeCalled, afterToolCall } = {}) => {
     const originalExecute = originalTool.execute;
     newTool.execute = async (args, opts) => {
       if (shouldToolBeCalled && !(await shouldToolBeCalled(toolName, args))) {
-        PREFS.debugLog(`Tool execution for '${toolName}' was denied by shouldToolBeCalled.`);
-        return { error: `Tool execution for '${toolName}' was denied by user.` };
+        const result = { error: `Tool execution for '${toolName}' was denied by user.` };
+        return result;
       }
-      const result = await originalExecute(args, opts);
-      if (afterToolCall) afterToolCall(toolName, result, args);
-      return result;
+      try {
+        const result = await originalExecute(args, opts);
+        afterToolCall?.(toolName, toolResultPreview(toolName, result), args);
+        return result;
+      } catch (error) {
+        if (error?.name === "AbortError") throw error;
+        const result = { error: error?.message || String(error) };
+        afterToolCall?.(toolName, toolResultPreview(toolName, result), args);
+        return result;
+      }
     };
     wrappedTools[toolName] = newTool;
   }

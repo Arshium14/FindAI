@@ -1,22 +1,7 @@
 // ==UserScript==
-// @name            import
-// @description     import all necessary things here
-// @author          Bibek Bhusal
+// @name            BrowseBot
+// @description     BrowseBot floating, URL-bar, and Library AI
+// @author          Bibek Bhusal and BrowseBot contributors
 // ==/UserScript==
 
-// My mods
-import "./command-palette/index.js";
 import "./findbar-ai/index.js";
-import "./floating-sidebar/index.js";
-import "./reopen-closed-tabs/index.js";
-import "./search-engine-icon/index.js";
-import "./search-engine-select/index.js";
-
-// Other scripts
-import "./others/tab-explode.js";
-import "./others/invert-pdf.js";
-
-// // WARN: THESE SETTINGS ARE FOR
-// // Only run one time to install mods and to set prefs
-// import "./others/set-prefs.js";
-// import "./others/install-mods.js";

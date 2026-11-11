@@ -1,1302 +1,268 @@
+// Native-findbar facade for the persistent BrowseBot floating panel.
+//
+// Task 8 replaces the old native-findbar-owned chat (which rebuilt the UI on
+// every TabSelect via updateFindbar() and aborted streaming on collapse/close)
+// with one persistent #browse-bot-panel owned by BrowseBotFloatingPanel. This
+// facade keeps every public call used by index.js, the context menu, and
+// settings, delegating to the single panel instance.
+//
+// Native findbar rules (Task 8):
+// - No updateFindbar() on TabSelect; no Ctrl+F replacement.
+// - attachAskAI() adds one Ask AI button and retains Alt+Enter in the native
+//   find field. It never writes native findbar geometry, moves match elements,
+//   overrides matches display, or closes native text search when the panel
+//   hides.
+// - Ctrl+Shift+F stays the floating toggle (registered in index.js).
+
 import { messageManagerAPI } from "./messageManager.js";
-import { browseBotFindbarLLM } from "./llm/index.js";
-import { timestampToSeconds } from "./llm/youtube.js";
 import { PREFS } from "./utils/prefs.js";
-import { parseElement, escapeXmlAttribute } from "../utils/parse.js";
-import { icons } from "../utils/icon.js";
-import { parseMD } from "./utils/markdown.js";
-import {
-  renderStreamText,
-  extractErrorText,
-  isProviderBalanceExhausted,
-  setStreamingControls,
-  attachMessageActions,
-} from "./utils/chat.js";
-import { createCombobox } from "../utils/combobox.js";
-import { createModelField } from "./utils/model-selector.js";
+import { parseElement } from "../utils/parse.js";
 import { SettingsModal } from "./settings.js";
 import { addPrefListener, removePrefListener } from "../utils/pref.js";
-import { getSecureApiKey } from "./utils/secure.js";
-
-const getSidebarWidth = () => {
-  if (
-    gZenCompactModeManager &&
-    (!gZenCompactModeManager?.preference || !PREFS.getPref("zen.view.compact.hide-tabbar")) &&
-    !gZenCompactModeManager.sidebarIsOnRight
-  ) {
-    return gZenCompactModeManager.getAndApplySidebarWidth();
-  } else return 0;
-};
-
-function updateSidebarWidth() {
-  if (!PREFS.pseudoBg) return;
-  const mainWindow = document.getElementById("main-window");
-  const width = getSidebarWidth();
-  if (width) mainWindow.style.setProperty("--zen-sidebar-width", width + "px");
-  setTimeout(() => browseBotFindbar._updateFindbarDimensions(), 2);
-}
-
-const sidebarWidthUpdate = function () {
-  const mainWindow = document.getElementById("main-window");
-  const attributes = ["zen-compact-mode", "zen-sidebar-expanded", "zen-right-side"];
-
-  // Set up a MutationObserver to watch attribute changes on #main-window
-  const observer = new MutationObserver((mutationsList) => {
-    if (!PREFS.pseudoBg) return;
-    for (const mutation of mutationsList) {
-      if (mutation.type === "attributes" && attributes.includes(mutation.attributeName)) {
-        updateSidebarWidth();
-      }
-    }
-  });
-
-  // Observe attribute changes
-  observer.observe(mainWindow, {
-    attributes: true,
-    attributeFilter: attributes,
-  });
-  updateSidebarWidth();
-};
-
-sidebarWidthUpdate();
-
-function renderCitationMarkers(answer, citations) {
-  const byId = new Map((citations || []).map((c) => [String(c.id), c]));
-  return String(answer).replace(/\[(\d+|\d{1,3}:\d{2}(?::\d{2})?)\]/g, (match, ref) => {
-    const cite = byId.get(ref);
-    const ts = cite?.timestamp ?? (/:/.test(ref) ? ref : null);
-    const tsAttr = ts ? ` data-timestamp="${escapeXmlAttribute(String(ts))}"` : "";
-    const label = ts ? `[${escapeXmlAttribute(String(ts))}]` : `[${ref}]`;
-    return `<span class="citation-link" data-citation-id="${ref}"${tsAttr}>${label}</span>`;
-  });
-}
+import { BrowseBotFloatingPanel } from "./floating-panel.js";
 
 PREFS.setInitialPrefs();
+
 export const browseBotFindbar = {
-  findbar: null,
-  expandButton: null,
-  chatContainer: null,
-  apiKeyContainer: null,
-  _updateFindbar: null,
-  _addKeymaps: null,
+  // The BrowseBotFloatingPanel instance. It owns the DOM panel, gestures,
+  // layout coordinator, target tab, run view, and AbortController.
+  panel: null,
+  _initialized: false,
+  aiStatus: {
+    citationsEnabled: PREFS.citationsEnabled,
+  },
+
+  // Native findbar integration (per-tab findbars are tracked for teardown).
+  _attachedFindbars: new Set(),
   _handleInputKeyPress: null,
-  _handleFindFieldInput: null,
-  _handleFindbarOpenEvent: null,
-  _handleFindbarCloseEvent: null,
-  _isExpanded: false,
-  _updateContextMenuText: null,
-  _backgroundStylesListener: null,
-  _citationsListener: null,
-  _contextMenuEnabledListener: null,
-  _persistListener: null,
-  _minimalListener: null,
-  _dndListener: null,
+
+  // Context menu
   contextMenuItem: null,
   _contextMenuRetryTimer: null,
   _handleContextMenuClick: null,
-  _matchesObserver: null,
-  _isDragging: false,
-  _startDrag: null,
-  _stopDrag: null,
-  _handleDrag: null,
-  _initialContainerCoor: { x: null, y: null },
-  _initialMouseCoor: { x: null, y: null },
-  _startWidth: null,
-  _resizeHandle: null,
-  _isResizing: false,
-  _startResize: null,
-  _stopResize: null,
-  _handleResize: null,
-  _handleResizeEnd: null,
-  _highlightTimeout: null,
-  _originalOnMatchesCountResult: null,
+  _updateContextMenuText: null,
 
-  /**
-   * Save findbar dimensions in css variables
-   */
-  _updateFindbarDimensions() {
-    if (!this.findbar) {
-      document.documentElement.style.removeProperty("--findbar-width");
-      document.documentElement.style.removeProperty("--findbar-height");
-      document.documentElement.style.removeProperty("--findbar-x");
-      document.documentElement.style.removeProperty("--findbar-y");
-      return;
-    }
-    const rect = this.findbar.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const _findbarDimension = { width: rect.width, height: rect.height };
-    const _findbarCoors = { x: rect.left, y: rect.top };
-    document.documentElement.style.setProperty("--findbar-width", `${_findbarDimension.width}px`);
-    document.documentElement.style.setProperty("--findbar-height", `${_findbarDimension.height}px`);
-    document.documentElement.style.setProperty("--findbar-x", `${_findbarCoors.x}px`);
-    document.documentElement.style.setProperty("--findbar-y", `${_findbarCoors.y}px`);
-    this.findbar.style.setProperty("--findbar-width", `${_findbarDimension.width}px`);
-    this.findbar.style.setProperty("--findbar-height", `${_findbarDimension.height}px`);
-  },
+  // Listeners
+  onTabSelect: null,
+  onFindbarOpen: null,
+  onFindbarClose: null,
+  _addKeymaps: null,
+  _citationsListener: null,
+  _contextMenuEnabledListener: null,
 
-  /**
-   * Save findbar dimensions in prefs
-   */
-  _saveFindbarDimensions() {
-    if (!this.findbar || !PREFS.rememberDimensions) return;
-    const rect = this.findbar.getBoundingClientRect();
-    PREFS.width = rect.width;
-  },
-
-  /**
-   * Apply findbar dimensions in saved prefs
-   */
-  _applyFindbarDimensions() {
-    if (!this.findbar || !PREFS.rememberDimensions) return;
-    const width = PREFS.width;
-    if (width) {
-      this.findbar.style.width = `${width}px`;
-    }
-  },
-  _isStreaming: false,
-  _abortController: null,
+  // --- Delegated public surface --------------------------------------------
 
   get expanded() {
-    return this._isExpanded;
+    return this.panel?.expanded ?? false;
   },
   set expanded(value) {
-    const isChanged = value !== this._isExpanded;
-    this._isExpanded = value;
-    if (!this.findbar) return;
-    this.findbar.expanded = value;
-    if (isChanged) {
-      setTimeout(() => this._updateFindbarDimensions(), 2);
-      setTimeout(() => this._updateFindbarDimensions(), 20);
-    }
-
-    if (value) {
-      this.findbar.classList.add("ai-expanded");
-      this.show();
-      this.showAIInterface();
-      if (isChanged) this.focusPrompt();
-      const messagesContainer = this?.chatContainer?.querySelector("#chat-messages");
-      if (messagesContainer) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-      }
-    } else {
-      if (this._isStreaming) {
-        this._abortController?.abort(); // Stop messsage if it is running
-      }
-      this.findbar.classList.remove("ai-expanded");
-      this.removeAIInterface();
-      if (isChanged && !this.minimal) this.focusInput();
-    }
+    if (this.panel) this.panel.expanded = value;
   },
-
   get enabled() {
     return PREFS.enabled;
   },
   set enabled(value) {
     if (typeof value === "boolean") PREFS.enabled = value;
   },
+  get streaming() {
+    return this.panel?.streaming ?? false;
+  },
+  get abortController() {
+    return this.panel?.abortController ?? null;
+  },
+
+  show() {
+    return this.panel?.show() ?? false;
+  },
+  hide() {
+    return this.panel?.hide() ?? false;
+  },
+  toggle() {
+    this.panel?.toggle();
+  },
+  clear() {
+    this.panel?.clear();
+  },
+  focusPrompt() {
+    this.panel?.focusPrompt();
+  },
+  setPromptText(text) {
+    this.panel?.setPromptText(text);
+  },
+  sendMessage(prompt) {
+    return this.panel?.sendMessage(prompt);
+  },
+  stop() {
+    this.panel?.stop();
+  },
+  regenerateFrom(wrap) {
+    this.panel?.regenerateFrom(wrap);
+  },
   handleEnabledChange(enabled) {
     if (enabled.value) this.init();
     else this.destroy();
   },
 
-  get minimal() {
-    return PREFS.minimal;
-  },
-  set minimal(value) {
-    if (typeof value === "boolean") PREFS.minimal = value;
-  },
-
-  handleMinimalPrefChange: function () {
-    this.removeExpandButton();
-    this.addExpandButton();
-    this.removeAIInterface();
-    this.showAIInterface();
-  },
-
-  updateFindbar() {
-    SettingsModal.hide();
-    this.removeExpandButton();
-    this.removeAIInterface();
-    this.disableResize();
-    if (!PREFS.persistChat) {
-      this.hide();
-      this.expanded = false;
-      this.clear();
-    }
-    gBrowser.getFindBar().then((findbar) => {
-      this.findbar = findbar;
-      if (this._dimensionsObserver) this._dimensionsObserver.disconnect();
-      this._dimensionsObserver = new ResizeObserver(() => this._updateFindbarDimensions());
-      this._dimensionsObserver.observe(findbar);
-      this._applyFindbarDimensions();
-      this.addExpandButton();
-      if (PREFS.persistChat) {
-        if (this?.findbar?.history) {
-          browseBotFindbarLLM.history = this.findbar.history; // restore history from findbar
-          if (
-            this?.findbar?.aiStatus &&
-            JSON.stringify(this.aiStatus) !== JSON.stringify(this.findbar.aiStatus) // check status saved in findabr
-          ) {
-            // clear history if ai stauts is changed
-            browseBotFindbarLLM.history = [];
-            this.findbar.history = [];
-          }
-        } else browseBotFindbarLLM.history = [];
-        if (this?.findbar?.expanded && !this?.findbar?.hidden) {
-          setTimeout(() => (this.expanded = true), 200);
-        } else {
-          this.hide();
-          this.expanded = false;
-        }
-      } else {
-        this.hide();
-        this.expanded = false;
-      }
-      this.updateFindbarStatus();
-      setTimeout(() => {
-        if (PREFS.dndEnabled) this.enableResize();
-        this._updateFindbarDimensions();
-      }, 0);
-
-      const matches = this.findbar.querySelector(".found-matches");
-      const status = this.findbar.querySelector(".findbar-find-status");
-      const wrapper = this.findbar.querySelector('hbox[anonid="findbar-textbox-wrapper"]');
-      if (wrapper) {
-        if (matches && matches.parentElement !== wrapper) wrapper.appendChild(matches);
-        if (status && status.parentElement !== wrapper) wrapper.appendChild(status);
-      }
-
-      this.findbar._findField.removeEventListener("keypress", this._handleInputKeyPress);
-      this.findbar._findField.addEventListener("keypress", this._handleInputKeyPress);
-      this.findbar._findField.removeEventListener("input", this._handleFindFieldInput);
-      this.findbar._findField.addEventListener("input", this._handleFindFieldInput);
-    });
-  },
-
-  /**
-   * Highlight a word using native findbar
-   * @param {string} word - Word to highlight.
-   */
-  highlight(word) {
-    if (!this.findbar) return;
-
-    // clear any existing timeout before starting a new one
-    if (this._highlightTimeout) clearTimeout(this._highlightTimeout);
-
-    this.findbar._find(word);
-
-    this._highlightTimeout = setTimeout(() => {
-      this.findbar.browser.finder.highlight(false);
-      this._highlightTimeout = null; // cleanup
-    }, 2000);
-  },
-
-  show() {
-    if (!this.findbar) return false;
-    this.findbar.open();
-    this.focusInput();
-    setTimeout(() => this._updateFindbarDimensions(), 0);
-    return true;
-  },
-  hide() {
-    if (!this.findbar) return false;
-    this.findbar.close();
-    this.findbar.toggleHighlight(false);
-    setTimeout(() => this._updateFindbarDimensions(), 0);
-    return true;
-  },
-  toggleVisibility() {
-    if (!this.findbar) return;
-    if (this.findbar.hidden) this.show();
-    else this.hide();
-  },
-
-  clear() {
-    browseBotFindbarLLM.clearData();
-    if (this.findbar) {
-      this.findbar.history = null;
-    }
-    const messages = this?.chatContainer?.querySelector("#chat-messages");
-    if (messages) messages.innerHTML = "";
-    setTimeout(() => this._updateFindbarDimensions(), 1);
-  },
-
-  aiStatus: {
-    citationsEnabled: PREFS.citationsEnabled,
-  },
+  // Status row is superseded by the settings modal; keep an internal snapshot
+  // for the citations pref change path without writing the native findbar.
   updateFindbarStatus() {
     this.aiStatus = {
       citationsEnabled: PREFS.citationsEnabled,
     };
-    if (this.findbar) this.findbar.aiStatus = this.aiStatus;
   },
 
-  createAPIKeyInterface() {
-    const currentProviderName = browseBotFindbarLLM.currentProvider.name;
-    const providerCombo = createCombobox({
-      id: "provider-selector",
-      value: currentProviderName,
-      items: Object.entries(browseBotFindbarLLM.AVAILABLE_PROVIDERS).map(([name, provider]) => ({
-        value: name,
-        label: provider.label,
-        image: provider.faviconUrl || "",
-      })),
-    });
-
-    const providerSelectorXulElement = providerCombo;
-
-    const html = `
-        <div class="browse-bot-setup">
-          <div class="ai-setup-content">
-            <h3>AI Setup Required</h3>
-            <p>To use AI features, you need to set up your API key and select a provider.</p>
-            <div class="provider-selection-group">
-              <label for="provider-selector">Select Provider:</label>
-            </div>
-            <div class="api-key-input-group">
-              <input type="text" id="base-url" class="api-input zenux-input" placeholder="Enter API Endpoint (e.g. https://api.your-provider.com/v1)" />
-              <input type="text" id="model-name" class="api-input zenux-input" placeholder="Enter Model Name (e.g. deepseek-chat)" />
-              <div id="model-selector-wrap"></div>
-              <div class="api-key-row">
-                <input type="password" id="api-key" class="zenux-input" placeholder="Enter your API key" />
-              </div>
-              <span class="setup-error" id="setup-error"></span>
-            </div>
-            <div class="api-key-links">
-              <button id="get-api-key-link" class="zenux-btn-ghost">Get API Key</button>
-              <button id="save-api-key" class="zenux-btn-primary">Save</button>
-            </div>
-          </div>
-        </div>`;
-    const container = parseElement(html);
-
-    const providerSelectionGroup = container.querySelector(".provider-selection-group");
-    // Insert the combobox after the label within the group
-    providerSelectionGroup.appendChild(providerSelectorXulElement);
-
-    const providerSelector = container.querySelector("#provider-selector");
-    const input = container.querySelector("#api-key");
-    const saveBtn = container.querySelector("#save-api-key");
-    const getApiKeyLink = container.querySelector("#get-api-key-link");
-    const setupContent = container.querySelector(".ai-setup-content");
-    const description = setupContent.querySelector("p");
-
-    let modelCombo = null;
-    const setupError = () => container.querySelector("#setup-error");
-    const setSetupError = (msg) => {
-      const el = setupError();
-      if (el) el.textContent = msg || "";
-    };
-
-    // Shared model field (same selector as the settings modal): dynamic
-    // combobox for refreshModels providers, text input for free-text
-    // customModel providers, static combobox for fixed model lists.
-    const syncModelField = (provider) => {
-      const wrap = container.querySelector("#model-selector-wrap");
-      const modelNameInput = container.querySelector("#model-name");
-      if (!wrap) return;
-      if (modelCombo) {
-        modelCombo.remove();
-        modelCombo = null;
-      }
-      if (provider.customModel && typeof provider.refreshModels !== "function") {
-        wrap.classList.add("hidden");
-        modelNameInput?.classList.remove("hidden");
-        if (modelNameInput) {
-          modelNameInput.value = (provider.modelPref && PREFS.getPref(provider.modelPref)) || "";
-          modelNameInput.placeholder =
-            provider.modelPlaceholder || "Enter Model Name (e.g. deepseek-chat)";
-        }
-        return;
-      }
-      modelNameInput?.classList.add("hidden");
-      wrap.classList.remove("hidden");
-      const field = createModelField(provider, {
-        id: "model-selector",
-        getApiKey: async () =>
-          container.querySelector("#api-key")?.value.trim() ||
-          (await getSecureApiKey(provider.apiPref)) ||
-          "",
-        isCurrent: () => modelCombo === field,
-      });
-      modelCombo = field;
-      wrap.appendChild(modelCombo);
-    };
-
-    const updateUIForProvider = async (providerName) => {
-      const provider = browseBotFindbarLLM.AVAILABLE_PROVIDERS[providerName];
-      if (!provider) return;
-      const baseUrlInput = container.querySelector("#base-url");
-      const apiKeyRow = container.querySelector(".api-key-row");
-      setSetupError("");
-
-      const needsBaseUrl = Boolean(provider.baseUrlPref) || providerName === "custom";
-      const needsApiKey = !provider.noApiKey;
-
-      if (needsBaseUrl) {
-        baseUrlInput?.classList.remove("hidden");
-        if (baseUrlInput) {
-          const baseUrlPrefKey =
-            provider.baseUrlPref || (providerName === "custom" ? PREFS.CUSTOM_BASE_URL : null);
-          baseUrlInput.value = (baseUrlPrefKey && PREFS.getPref(baseUrlPrefKey)) || "";
-          baseUrlInput.placeholder =
-            providerName === "custom"
-              ? "Enter API Endpoint (e.g. https://api.your-provider.com/v1)"
-              : "Enter API Endpoint (e.g. http://localhost:11434/api)";
-        }
-      } else {
-        baseUrlInput?.classList.add("hidden");
-      }
-
-      syncModelField(provider);
-
-      if (needsApiKey) {
-        apiKeyRow?.classList.remove("hidden");
-        input.value = (await provider.getApiKeyAsync?.()) ?? provider.apiKey ?? "";
-        input.placeholder = `Enter your ${provider.label} API key`;
-      } else {
-        apiKeyRow?.classList.add("hidden");
-      }
-
-      if (provider.noApiKey) {
-        description.textContent =
-          providerName === "ollama"
-            ? "Ollama is selected. Configure the Base URL and Model name below, then press Save."
-            : `${provider.label} is free and needs no API key. Enter a model name below, then press Save.`;
-      } else if (providerName === "custom") {
-        description.textContent =
-          "Custom Provider is selected. Please enter the API Endpoint, Model name, and your API Key, then press Save.";
-      } else if (provider.customModel) {
-        description.textContent = `Enter your ${provider.label} API key and a model name below, then press Save.`;
-      } else {
-        description.textContent =
-          "To use AI features, enter your API key and pick a model, then press Save.";
-      }
-
-      getApiKeyLink.style.display = provider.apiKeyUrl ? "inline-block" : "none";
-      getApiKeyLink.disabled = !provider.apiKeyUrl;
-      getApiKeyLink.title = provider.apiKeyUrl
-        ? "Get API Key"
-        : "No API key link available for this provider.";
-    };
-
-    updateUIForProvider(currentProviderName);
-
-    // Use 'command' event for combobox selection
-    providerSelector.addEventListener("command", (e) => {
-      const selectedProviderName = e.target.value;
-      browseBotFindbarLLM.setProvider(selectedProviderName); // This also updates PREFS.llmProvider internally
-      updateUIForProvider(selectedProviderName);
-    });
-
-    getApiKeyLink.addEventListener("click", () => {
-      openTrustedLinkIn(browseBotFindbarLLM.currentProvider.apiKeyUrl, "tab");
-    });
-
-    saveBtn.addEventListener("click", async () => {
-      const provider = browseBotFindbarLLM.currentProvider;
-      if (!provider) return;
-      const providerName = provider.name;
-      const baseUrlInput = container.querySelector("#base-url");
-      const modelNameInput = container.querySelector("#model-name");
-
-      const needsBaseUrl = Boolean(provider.baseUrlPref) || providerName === "custom";
-      const needsApiKey = !provider.noApiKey;
-      const needsModelText =
-        Boolean(provider.customModel) && typeof provider.refreshModels !== "function";
-
-      const baseUrl = baseUrlInput ? baseUrlInput.value.trim() : "";
-      const modelText = modelNameInput ? modelNameInput.value.trim() : "";
-      const apiKey = input.value.trim();
-      const dropdownModel = modelCombo ? modelCombo.value : "";
-
-      if (needsBaseUrl && !baseUrl) {
-        setSetupError("Enter a base URL first");
-        baseUrlInput?.focus();
-        return;
-      }
-      if (needsModelText && !modelText) {
-        setSetupError("Enter a model name");
-        modelNameInput?.focus();
-        return;
-      }
-      if (!needsModelText && !dropdownModel) {
-        setSetupError("Select a model");
-        modelCombo?.focus();
-        return;
-      }
-      if (needsApiKey && !apiKey) {
-        setSetupError(`Enter your ${provider.label} API key`);
-        input.focus();
-        return;
-      }
-      setSetupError("");
-
-      if (needsBaseUrl && baseUrl) {
-        const baseUrlPrefKey =
-          provider.baseUrlPref || (providerName === "custom" ? PREFS.CUSTOM_BASE_URL : null);
-        if (baseUrlPrefKey) PREFS.setPref(baseUrlPrefKey, baseUrl);
-      }
-      if (needsModelText) {
-        if (modelText && provider.modelPref) PREFS.setPref(provider.modelPref, modelText);
-      } else if (dropdownModel && provider.modelPref) {
-        PREFS.setPref(provider.modelPref, dropdownModel);
-      }
-      if (needsApiKey && apiKey) {
-        await provider.setApiKeyAsync(apiKey);
-      }
-
-      this.showAIInterface(); // Refresh UI after saving; stays on setup if still incomplete
-    });
-    [input, container.querySelector("#base-url"), container.querySelector("#model-name")].forEach(
-      (el) => {
-        el?.addEventListener("input", () => setSetupError(""));
-        el?.addEventListener("keypress", (e) => {
-          if (e.key === "Enter") saveBtn.click();
-        });
-      }
-    );
-    return container;
-  },
-
-  async sendMessage(prompt) {
-    if (!prompt || this._isStreaming) return;
-
-    this.show();
-    this.expanded = true;
-
-    this.addChatMessage({ role: "user", content: prompt });
-
-    const messagesContainer = this.chatContainer.querySelector("#chat-messages");
-
-    this._abortController = new AbortController();
-    this._toggleStreamingControls(true);
-
-    const aiMessageDiv = parseElement(
-      `<div class="chat-message chat-message-ai">
-        <div class="message-content">
-          <div class="markdown-body"></div>
-        </div>
-      </div>`
-    );
-    const contentDiv = aiMessageDiv.querySelector(".markdown-body");
-    if (messagesContainer) {
-      messagesContainer.appendChild(aiMessageDiv);
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-
-    try {
-      const resultPromise = browseBotFindbarLLM.sendMessage(prompt, this._abortController.signal);
-
-      if (PREFS.citationsEnabled || !PREFS.streamEnabled) {
-        const loadingIndicator = this.createLoadingIndicator();
-        messagesContainer.appendChild(loadingIndicator);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-        try {
-          const result = await resultPromise;
-          if (loadingIndicator.parentNode) loadingIndicator.remove();
-
-          if (PREFS.citationsEnabled) {
-            const { answer, citations } = result;
-            if (this._isPollinationsBalanceExhausted(answer)) {
-              this._flagPollinationsKeyPrompt();
-              this._renderPollinationsKeyPrompt(contentDiv);
-            } else if (citations && citations.length > 0) {
-              aiMessageDiv.dataset.citations = JSON.stringify(citations);
-            }
-            const textToParse = renderCitationMarkers(answer, citations);
-            contentDiv.appendChild(parseMD(textToParse));
-          } else {
-            if (this._isPollinationsBalanceExhausted(result.text)) {
-              this._flagPollinationsKeyPrompt();
-              this._renderPollinationsKeyPrompt(contentDiv);
-            } else if (result.text.trim() === "") {
-              aiMessageDiv.remove();
-            } else {
-              contentDiv.appendChild(parseMD(result.text));
-            }
-          }
-        } finally {
-          if (loadingIndicator.parentNode) loadingIndicator.remove();
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-          setTimeout(() => this._updateFindbarDimensions(), 0);
-        }
-      } else {
-        const loadingIndicator = this.createLoadingIndicator();
-        messagesContainer.appendChild(loadingIndicator);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-        const result = await resultPromise;
-        let fullText = "";
-        try {
-          const renderStream = () => {
-            renderStreamText(contentDiv, fullText);
-            setTimeout(() => this._updateFindbarDimensions(), 0);
-            if (messagesContainer) {
-              messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-          };
-          for await (const delta of result.textStream) {
-            if (loadingIndicator.parentNode) loadingIndicator.remove();
-            fullText += delta;
-            renderStream();
-          }
-          // The last delta can leave an intermediate state behind (e.g. a
-          // fence that only looks unclosed). Settle on the final text so the
-          // first view matches the history re-render.
-          try {
-            const finalText = await result.text;
-            if (typeof finalText === "string") fullText = finalText;
-          } catch (e) {
-            PREFS.debugError("Failed to resolve final stream text:", e.message);
-          }
-          renderStream();
-          if (this._isPollinationsBalanceExhausted(fullText)) {
-            this._flagPollinationsKeyPrompt();
-            this._renderPollinationsKeyPrompt(contentDiv);
-          } else if (fullText.trim() === "") {
-            aiMessageDiv.remove();
-          }
-        } finally {
-          if (loadingIndicator.parentNode) loadingIndicator.remove();
-        }
-      }
-    } catch (e) {
-      if (e.name !== "AbortError") {
-        PREFS.debugError("Error sending message:", e);
-        if (aiMessageDiv) aiMessageDiv.remove();
-        const errorText = extractErrorText(e);
-        if (this._isPollinationsBalanceExhausted(errorText)) {
-          browseBotFindbarLLM.history.push({
-            role: "assistant",
-            content: "",
-            pollinationsKeyPrompt: true,
-          });
-          this.addChatMessage({ role: "assistant", content: "", pollinationsKeyPrompt: true });
-        } else {
-          this.addChatMessage({ role: "error", content: errorText });
-        }
-      } else {
-        PREFS.debugLog("Streaming aborted by user.");
-        if (contentDiv && contentDiv.textContent.trim()) {
-          contentDiv.appendChild(parseMD("_Stopped_"));
-        } else if (aiMessageDiv) {
-          aiMessageDiv.remove();
-        }
-      }
-    } finally {
-      if (aiMessageDiv.isConnected) {
-        attachMessageActions(aiMessageDiv, {
-          onRegenerate: (wrap) => this.regenerateFrom(wrap),
-        });
-      }
-      this._toggleStreamingControls(false);
-      this._abortController = null;
-    }
-  },
-
-  regenerateFrom(wrap) {
-    if (!wrap?.isConnected || this._isStreaming) return;
-    const messagesContainer = this.chatContainer?.querySelector("#chat-messages");
-    if (!messagesContainer) return;
-    const userWraps = [...messagesContainer.querySelectorAll(".chat-message-user")];
-    let userWrap = null;
-    if (wrap.classList.contains("chat-message-user")) {
-      userWrap = wrap;
-    } else {
-      let prev = wrap.previousElementSibling;
-      while (prev) {
-        if (prev.classList?.contains("chat-message-user")) {
-          userWrap = prev;
-          break;
-        }
-        prev = prev.previousElementSibling;
-      }
-    }
-    if (!userWrap) return;
-    const ordinal = userWraps.indexOf(userWrap);
-    if (ordinal < 0) return;
-    const history = browseBotFindbarLLM.getHistory();
-    const userEntries = history.filter((m) => !m.pageContext && m.role === "user");
-    if (ordinal >= userEntries.length) return;
-    const target = userEntries[ordinal];
-    const prompt = String(target.content || "").trim();
-    if (!prompt) return;
-    browseBotFindbarLLM.setHistory(history.slice(0, history.indexOf(target)));
-    let node = userWrap;
-    while (node) {
-      const next = node.nextSibling;
-      node.remove();
-      node = next;
-    }
-    this.sendMessage(prompt);
-  },
-
-  _toggleStreamingControls(isStreaming) {
-    this._isStreaming = isStreaming;
-    if (!this.chatContainer) return;
-
-    const sendBtn = this.chatContainer.querySelector("#send-prompt");
-    const stopBtn = this.chatContainer.querySelector("#stop-generation");
-
-    setStreamingControls({ sendBtn, stopBtn }, isStreaming, () => this.focusPrompt());
-  },
-
-  // The following _overrideFindbarMatchesDisplay function is adapted from
-  // aminomancer's Findbar Mods (https://github.com/aminomancer/uc.css.js/blob/master/JS/findbarMods.uc.js)
-  // under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
-  // Original Author: aminomancer
-  // Source: https://github.com/aminomancer/uc.css.js
-  // License: http://creativecommons.org/licenses/by-nc-sa/4.0/
-  _overrideFindbarMatchesDisplay(retry = 0) {
-    PREFS.debugLog(`_overrideFindbarMatchesDisplay called, retry: ${retry}`);
-    if (this._originalOnMatchesCountResult) {
-      PREFS.debugLog("Prototype already overridden.");
-      return;
-    }
-
-    const findbarClass = customElements.get("findbar")?.prototype;
-
-    if (!findbarClass) {
-      PREFS.debugLog("findbarClass not found.");
-      if (retry < 10) {
-        setTimeout(() => this._overrideFindbarMatchesDisplay(retry + 1), 100);
-        PREFS.debugLog(`Retrying _overrideFindbarMatchesDisplay in 100ms, retry: ${retry + 1}`);
-      } else {
-        PREFS.debugError(
-          "Failed to override findbar matches display: findbar custom element not found after multiple retries."
-        );
-      }
-      return;
-    }
-
-    PREFS.debugLog("findbarClass found. Overriding onMatchesCountResult.");
-    this._originalOnMatchesCountResult = findbarClass.onMatchesCountResult;
-
-    findbarClass.onMatchesCountResult = function (result) {
-      if (!PREFS.enabled) return;
-
-      const foundMatchesElement = this._foundMatches;
-      if (typeof result?.current !== "number" || typeof result?.total !== "number") return;
-
-      const next = this.querySelector(".findbar-find-next");
-      const previous = this.querySelector(".findbar-find-previous");
-      if (next && previous) {
-        if (result.searchString.trim() === "" || result.total <= 1) {
-          next.disabled = true;
-          previous.disabled = true;
-        } else if (result.current <= 1) {
-          next.disabled = false;
-          previous.disabled = true;
-        } else if (result.current >= result.total) {
-          next.disabled = true;
-          previous.disabled = false;
-        } else {
-          next.disabled = false;
-          previous.disabled = false;
-        }
-      }
-
-      if (!foundMatchesElement) return;
-      if (result.searchString.trim() === "") {
-        foundMatchesElement.setAttribute("value", "");
-        return;
-      }
-
-      foundMatchesElement.hidden = false;
-      const newLabel = `${result.current}/${result.total}`;
-      foundMatchesElement.setAttribute("value", newLabel);
-    };
-    PREFS.debugLog("onMatchesCountResult successfully overridden.");
-  },
-
-  _restoreFindbarMatchesDisplay() {
-    if (this._originalOnMatchesCountResult) {
-      const findbarClass = customElements.get("findbar")?.prototype;
-      if (findbarClass) {
-        findbarClass.onMatchesCountResult = this._originalOnMatchesCountResult;
-      }
-      this._originalOnMatchesCountResult = null;
-
-      // Reset the DOM element for the current findbar instance
-      if (this.findbar) {
-        const foundMatchesElement = this.findbar._foundMatches;
-        if (foundMatchesElement) {
-          foundMatchesElement.setAttribute("value", "");
-          foundMatchesElement.hidden = true;
-        }
-      }
-    }
-  },
-
-  createChatInterface() {
-    const chatInputGroup = `<div class="ai-chat-input-group">
-          <textarea id="ai-prompt" placeholder="Ask AI anything..." rows="2"></textarea>
-          <button id="send-prompt" class="send-btn zenux-btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path fill="currentColor" d="M17.991 6.01L5.399 10.563l4.195 2.428l3.699-3.7a1 1 0 0 1 1.414 1.415l-3.7 3.7l2.43 4.194L17.99 6.01Zm.323-2.244c1.195-.433 2.353.725 1.92 1.92l-5.282 14.605c-.434 1.198-2.07 1.344-2.709.241l-3.217-5.558l-5.558-3.217c-1.103-.639-.957-2.275.241-2.709z" />
-            </svg>
-          </button>
-          <button id="stop-generation" class="stop-btn zenux-btn-primary" style="display: none;">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                  <path fill="currentColor" d="M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12S6.477 2 12 2m2 6h-4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2" />
-              </svg>
-          </button>
-        </div>`;
-
-    const container = parseElement(`
-        <div class="browse-bot-chat">
-          <div class="ai-chat-header">
-            <div class="findbar-drag-handle"></div>
-          </div>
-          <div class="ai-chat-messages" id="chat-messages"></div>
-          ${chatInputGroup}
-        </div>`);
-
-    const chatHeader = container.querySelector(".ai-chat-header");
-
-    const clearBtn = parseElement(
-      `
-        <toolbarbutton 
-          id="clear-chat" 
-          class="clear-chat-btn zenux-icon-btn" 
-          image="chrome://global/skin/icons/delete.svg" 
-          tooltiptext="Clear Chat"
-        />`,
-      "xul"
-    );
-
-    const settingsBtn = parseElement(
-      `
-        <toolbarbutton 
-          id="open-settings-btn" 
-          class="settings-btn zenux-icon-btn" 
-          image="chrome://global/skin/icons/settings.svg" 
-          tooltiptext="Settings"
-        />`,
-      "xul"
-    );
-
-    const collapseBtn = parseElement(
-      `
-        <toolbarbutton 
-          id="findbar-collapse-btn" 
-          class="findbar-collapse-btn zenux-icon-btn" 
-          image="chrome://browser/skin/zen-icons/unpin.svg" 
-          tooltiptext="Collapse"
-        />`,
-      "xul"
-    );
-
-    chatHeader.appendChild(clearBtn);
-    chatHeader.appendChild(settingsBtn);
-    chatHeader.appendChild(collapseBtn);
-
-    const chatMessages = container.querySelector("#chat-messages");
-    const promptInput = container.querySelector("#ai-prompt");
-    const sendBtn = container.querySelector("#send-prompt");
-    const stopBtn = container.querySelector("#stop-generation");
-
-    const handleSend = () => {
-      const prompt = promptInput.value.trim();
-      this.sendMessage(prompt);
-      promptInput.value = ""; // Clear input after sending
-    };
-
-    sendBtn.addEventListener("click", handleSend);
-    stopBtn.addEventListener("click", () => {
-      this._abortController?.abort();
-    });
-
-    promptInput.addEventListener("keypress", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
-    });
-
-    clearBtn.addEventListener("click", () => {
-      this.clear();
-      this.expanded = false;
-    });
-
-    settingsBtn.addEventListener("click", () => {
-      SettingsModal.show();
-    });
-
-    collapseBtn.addEventListener("click", () => {
-      this.expanded = false;
-    });
-
-    const copyBlockCode = async (copyButton) => {
-      const codeEl = copyButton.closest(".zh-codeblock")?.querySelector("pre code");
-      if (!codeEl) return;
-      try {
-        await navigator.clipboard.writeText(codeEl.textContent);
-        copyButton.textContent = "Copied!";
-      } catch {
-        copyButton.textContent = "Copy failed";
-      }
-      setTimeout(() => {
-        copyButton.textContent = "Copy";
-      }, 1500);
-    };
-    const openChatLink = (e) => {
-      const anchor = e.target?.closest?.("a[href]");
-      if (!anchor) return;
-      e.preventDefault();
-      try {
-        openTrustedLinkIn(anchor.href, "tab");
-      } catch {}
-    };
-    chatMessages.addEventListener("click", async (e) => {
-      const copyButton = e.target.closest?.(".zh-codeblock-copy");
-      if (copyButton) {
-        copyBlockCode(copyButton);
-        return;
-      }
-      const button = e.target.closest?.(".citation-link");
-      if (button) {
-        if (button.dataset.timestamp) {
-          const seconds = timestampToSeconds(button.dataset.timestamp);
-          if (seconds !== null) messageManagerAPI.seekVideo(seconds);
-          return;
-        }
-        const citationId = button.dataset.citationId;
-        const messageEl = button.closest(".chat-message[data-citations]");
-
-        if (messageEl) {
-          const citations = JSON.parse(messageEl.dataset.citations);
-          const citation = citations.find((c) => c.id == citationId);
-          if (citation && citation.source_quote) {
-            PREFS.debugLog(
-              `Citation [${citationId}] clicked. Requesting highlight for:`,
-              citation.source_quote
-            );
-            this.highlight(citation.source_quote);
-          }
-        }
-      } else {
-        openChatLink(e);
-      }
-    });
-
-    chatMessages.addEventListener("auxclick", (e) => {
-      if (e.button === 1) openChatLink(e);
-    });
-
-    chatMessages.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return;
-      const copyButton = e.target.closest?.(".zh-codeblock-copy");
-      if (copyButton) {
-        e.preventDefault();
-        copyBlockCode(copyButton);
-      }
-    });
-
-    return container;
-  },
-
-  createLoadingIndicator() {
-    const messageDiv = parseElement(
-      `<div class="chat-message chat-message-loading"><div class="message-content">${icons.toolLoading}Loading...</div></div>`
-    );
-    return messageDiv;
-  },
-
-  _isPollinationsBalanceExhausted(text) {
-    return isProviderBalanceExhausted(browseBotFindbarLLM.currentProvider, text);
-  },
-
-  _flagPollinationsKeyPrompt() {
-    const history = browseBotFindbarLLM.history;
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i]?.role === "assistant") {
-        history[i].pollinationsKeyPrompt = true;
-        break;
-      }
-    }
-  },
-
-  _renderPollinationsKeyPrompt(contentDiv) {
-    contentDiv.replaceChildren();
-    const provider = browseBotFindbarLLM.currentProvider;
-    const keyUrl = provider?.apiKeyUrl || "https://enter.pollinations.ai/keys";
-    const promptEl = parseElement(`
-      <div class="pollinations-key-prompt">
-        <p>Pollinations ran out of free credits for this request (anonymous tier).
-          <a href="${escapeXmlAttribute(keyUrl)}">Get a free API key</a>,
-          paste it below, and send your message again. The key stays optional.</p>
-        <div class="pollinations-key-row">
-          <input type="password" class="zenux-input" placeholder="Paste Pollinations API key" />
-          <button class="zenux-btn-primary">Save</button>
-        </div>
-        <span class="key-prompt-status"></span>
-      </div>`);
-    const input = promptEl.querySelector("input");
-    const saveBtn = promptEl.querySelector("button");
-    const status = promptEl.querySelector(".key-prompt-status");
-    saveBtn.addEventListener("click", async () => {
-      const key = input.value.trim();
-      if (!key) {
-        status.textContent = "Paste your API key first.";
-        return;
-      }
-      saveBtn.disabled = true;
-      try {
-        await browseBotFindbarLLM.currentProvider.setApiKeyAsync(key);
-        input.value = "";
-        status.textContent = "Saved. Send your message again to retry with your key.";
-      } catch (e) {
-        PREFS.debugError("Could not save Pollinations API key:", e);
-        status.textContent = "Could not save the key, try again.";
-      } finally {
-        saveBtn.disabled = false;
-        setTimeout(() => this._updateFindbarDimensions(), 0);
-      }
-    });
-    input.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") saveBtn.click();
-    });
-    input.addEventListener("input", () => {
-      status.textContent = "";
-    });
-    contentDiv.appendChild(promptEl);
-    setTimeout(() => this._updateFindbarDimensions(), 0);
-  },
-
-  addChatMessage(message) {
-    const { role, content } = message;
-    if (!this.chatContainer || content === undefined || content === null) return;
-
-    const messagesContainer = this.chatContainer.querySelector("#chat-messages");
-    if (!messagesContainer) return;
-
-    if (
-      message.pollinationsKeyPrompt &&
-      browseBotFindbarLLM.currentProvider?.name === "pollinations"
-    ) {
-      const promptDiv = parseElement(`<div class="chat-message chat-message-ai"></div>`);
-      const promptContent = parseElement(`<div class="message-content"></div>`);
-      promptDiv.appendChild(promptContent);
-      messagesContainer.appendChild(promptDiv);
-      this._renderPollinationsKeyPrompt(promptContent);
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-      return;
-    }
-
-    let type;
-    switch (role) {
-      case "user":
-        type = "user";
-        break;
-      case "assistant":
-        type = "ai";
-        break;
-      case "error":
-        type = "error";
-        break;
-      default:
-        return; // Don't display other roles like 'tool'
-    }
-
-    const messageDiv = parseElement(`<div class="chat-message chat-message-${type}"></div>`);
-    const contentDiv = parseElement(`<div class="message-content"></div>`);
-
-    if (role === "assistant" && typeof content === "object" && content.answer !== undefined) {
-      // Case 1: Live response from generateObject for citations
-      const { answer, citations } = content;
-      if (citations && citations.length > 0) {
-        messageDiv.dataset.citations = JSON.stringify(citations);
-      }
-      const textToParse = renderCitationMarkers(answer, citations);
-      contentDiv.appendChild(parseMD(textToParse));
-    } else {
-      // Case 2: String content (from user, stream, generateText, or history)
-      const textContent = typeof content === "string" ? content : (content[0]?.text ?? "");
-
-      if (role === "assistant" && PREFS.citationsEnabled) {
-        // Sub-case: Rendering historical assistant message in citation mode.
-        // It's a string that needs to be parsed into answer/citations.
-        const { answer, citations } = browseBotFindbarLLM.parseModelResponseText(textContent);
-        if (citations && citations.length > 0) {
-          messageDiv.dataset.citations = JSON.stringify(citations);
-        }
-        const textToParse = renderCitationMarkers(answer, citations);
-        contentDiv.appendChild(parseMD(textToParse));
-      } else {
-        // Sub-case: Simple string content
-        contentDiv.appendChild(parseMD(textContent));
-      }
-    }
-
-    messageDiv.appendChild(contentDiv);
-    attachMessageActions(messageDiv, {
-      onRegenerate: (wrap) => this.regenerateFrom(wrap),
-    });
-    messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    setTimeout(() => this._updateFindbarDimensions(), 10);
-  },
-
-  _needsSetup() {
-    const provider = browseBotFindbarLLM.currentProvider;
-    if (!provider) return true;
-    if (provider.name === "custom") {
-      return (
-        !PREFS.getPref(PREFS.CUSTOM_BASE_URL) ||
-        !PREFS.getPref(provider.modelPref) ||
-        !provider.apiKey
-      );
-    }
-    if (provider.noApiKey) {
-      return (
-        (provider.baseUrlPref && !PREFS.getPref(provider.baseUrlPref)) ||
-        !PREFS.getPref(provider.modelPref)
-      );
-    }
-    if (provider.customModel && !PREFS.getPref(provider.modelPref)) return true;
-    return !provider.apiKey;
-  },
-
-  showAIInterface() {
-    if (!this.findbar) return;
-    this.removeAIInterface();
-
-    this.findbar.classList.remove("ai-settings-active");
-
-    if (this._needsSetup()) {
-      this.apiKeyContainer = this.createAPIKeyInterface();
-      this.findbar.insertBefore(this.apiKeyContainer, this.findbar.firstChild);
-    } else {
-      this.chatContainer = this.createChatInterface();
-      if (PREFS.dndEnabled) this.enableDND();
-
-      // Re-render history using the new message format
-      const history = browseBotFindbarLLM.getHistory();
-      for (const message of history) {
-        if (message.pageContext) continue;
-        this.addChatMessage(message);
-      }
-
-      this.findbar.insertBefore(this.chatContainer, this.findbar.firstChild);
-    }
-    setTimeout(() => this._updateFindbarDimensions(), 10);
-  },
-
-  focusInput() {
-    if (this.findbar) setTimeout(() => this.findbar._findField.focus(), 10);
-  },
-  focusPrompt() {
-    const promptInput = this.chatContainer?.querySelector("#ai-prompt");
-    if (promptInput) setTimeout(() => promptInput.focus(), 10);
-  },
-  setPromptText(text) {
-    const promptInput = this?.chatContainer?.querySelector("#ai-prompt");
-    if (promptInput && text) promptInput.value = text;
-  },
-  async setPromptTextFromSelection() {
-    let text;
-    const selection = await messageManagerAPI.getSelectedText();
-    if (!selection || !selection.hasSelection) text = this?.findbar?._findField?.value;
-    else text = selection.selectedText;
-    this.setPromptText(text);
-  },
-
-  removeAIInterface() {
-    if (this.apiKeyContainer) {
-      this.apiKeyContainer.remove();
-      this.apiKeyContainer = null;
-    }
-    if (this.chatContainer) {
-      this.chatContainer.remove();
-      this.chatContainer = null;
-    }
-  },
+  // --- Lifecycle -----------------------------------------------------------
 
   init() {
     if (!this.enabled) return;
-    this.updateFindbar();
-    this.addListeners();
-    if (PREFS.contextMenuEnabled) {
-      this.addContextMenuItem();
+    if (!this.panel) this.panel = new BrowseBotFloatingPanel();
+    this.panel.init();
+    this.panel.targetTab = gBrowser.selectedTab;
+
+    if (!this._initialized) {
+      this._initialized = true;
+      this.onTabSelect = () => {
+        this.panel.targetTab = gBrowser.selectedTab;
+        this.panel.layout?.schedule();
+      };
+      this.onFindbarOpen = () => {
+        this.attachAskAI();
+        this.panel.layout?.schedule();
+      };
+      this.onFindbarClose = () => this.panel.layout?.schedule();
+      gBrowser.tabContainer.addEventListener("TabSelect", this.onTabSelect);
+      window.addEventListener("findbaropen", this.onFindbarOpen);
+      window.addEventListener("findbarclose", this.onFindbarClose);
+
+      this._addKeymaps = this.addKeymaps.bind(this);
+      document.addEventListener("keydown", this._addKeymaps);
+      this._citationsListener = addPrefListener(PREFS.CITATIONS_ENABLED, () => {
+        this.updateFindbarStatus();
+        if (!this.streaming) this.clear();
+      });
+      this._contextMenuEnabledListener = addPrefListener(
+        PREFS.CONTEXT_MENU_ENABLED,
+        (pref) => {
+          if (pref.value) this.addContextMenuItem();
+          else this.removeContextMenuItem();
+        }
+      );
     }
-    this._overrideFindbarMatchesDisplay();
+
+    this.attachAskAI();
+    if (PREFS.contextMenuEnabled) this.addContextMenuItem();
   },
+
   destroy() {
-    this.findbar?.style.removeProperty("--findbar-width");
-    this.findbar?.style.removeProperty("--findbar-height");
-    this.findbar = null;
-    this._dimensionsObserver?.disconnect();
-    this._dimensionsObserver = null;
-    setTimeout(() => this._updateFindbarDimensions(), 10);
-    this.expanded = false;
+    // panel.destroy() is the sole lifecycle method that aborts a run.
+    this.panel?.destroy();
+    this.panel = null;
+    this._initialized = false;
     try {
       this.removeListeners();
     } catch {}
-    this.removeExpandButton();
+    this.removeAskAI();
     this.removeContextMenuItem();
-    this.removeAIInterface();
     SettingsModal.hide();
-    this._restoreFindbarMatchesDisplay();
   },
 
-  addExpandButton() {
-    if (!this.findbar) return false;
+  addKeymaps(e) {
+    if (e.key?.toLowerCase() === "escape") {
+      if (SettingsModal._modalElement && SettingsModal._modalElement.parentNode) {
+        e.preventDefault();
+        e.stopPropagation();
+        SettingsModal.hide();
+      } else if (this.expanded) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Hiding never aborts the run and never closes native text search.
+        this.hide();
+      }
+    }
+  },
 
-    // Always remove both buttons before adding the correct one
-    this.removeExpandButton();
+  removeListeners() {
+    if (this.onTabSelect) {
+      gBrowser.tabContainer.removeEventListener("TabSelect", this.onTabSelect);
+    }
+    if (this.onFindbarOpen) window.removeEventListener("findbaropen", this.onFindbarOpen);
+    if (this.onFindbarClose) window.removeEventListener("findbarclose", this.onFindbarClose);
+    if (this._addKeymaps) document.removeEventListener("keydown", this._addKeymaps);
+    removePrefListener(this._citationsListener);
+    removePrefListener(this._contextMenuEnabledListener);
+    this.onTabSelect = null;
+    this.onFindbarOpen = null;
+    this.onFindbarClose = null;
+    this._addKeymaps = null;
+    this._citationsListener = null;
+    this._contextMenuEnabledListener = null;
+  },
 
-    if (this.minimal) {
-      const container = this.findbar.querySelector(".findbar-container");
+  // --- Native findbar Ask AI facade ----------------------------------------
+
+  attachAskAI() {
+    if (!this.enabled) return;
+    gBrowser.getFindBar().then((findbar) => {
+      if (!findbar || !this.enabled || !this.panel) return;
+      // Prune findbars that were destroyed with their tabs.
+      for (const fb of this._attachedFindbars) {
+        if (!fb.isConnected) this._attachedFindbars.delete(fb);
+      }
+      const container = findbar.querySelector(".findbar-container");
       if (container && !container.querySelector("#findbar-ask")) {
         const askBtn = parseElement(
-          `<button id="findbar-ask" class="zenux-btn-primary" anonid="findbar-ask">Ask</button>`
+          `<button id="findbar-ask" class="zenux-btn-primary" anonid="findbar-ask" title="Ask BrowseBot" aria-label="Ask BrowseBot">Ask AI</button>`
         );
-        askBtn.addEventListener("click", () => {
-          const inpText = this.findbar._findField.value.trim();
-          this.sendMessage(inpText);
-          this.findbar._findField.value = "";
-          this.focusInput();
-        });
+        askBtn.addEventListener("click", () => this._askFromField(findbar._findField));
         container.appendChild(askBtn);
-        this.askButton = askBtn;
       }
-    } else {
-      const button_id = "findbar-expand";
-      const button = parseElement(
-        `<button id="${button_id}" class="zenux-btn-primary" anonid="${button_id}">Expand</button>`
-      );
-      button.addEventListener("click", () => (this.expanded = true));
-      button.textContent = "Expand";
-      this.findbar.appendChild(button);
-      this.expandButton = button;
-    }
-    return true;
+      // Retain Alt+Enter in the native find field.
+      if (!this._handleInputKeyPress) {
+        this._handleInputKeyPress = this.handleInputKeyPress.bind(this);
+      }
+      const field = findbar._findField;
+      if (field) {
+        field.removeEventListener("keypress", this._handleInputKeyPress);
+        field.addEventListener("keypress", this._handleInputKeyPress);
+        field.placeholder = "Press Alt + Enter to ask AI";
+      }
+      this._attachedFindbars.add(findbar);
+    });
   },
 
-  removeExpandButton() {
-    if (this.askButton) {
-      this.askButton.remove();
-      this.askButton = null;
+  removeAskAI() {
+    for (const findbar of this._attachedFindbars) {
+      const field = findbar._findField;
+      if (field && this._handleInputKeyPress) {
+        field.removeEventListener("keypress", this._handleInputKeyPress);
+      }
+      findbar.querySelector("#findbar-ask")?.remove();
     }
-    if (this.expandButton) {
-      this.expandButton.remove();
-      this.expandButton = null;
-    }
-    return true;
+    this._attachedFindbars.clear();
+    document.querySelectorAll("#findbar-ask").forEach((btn) => btn.remove());
+    this._handleInputKeyPress = null;
   },
 
-  handleInputKeyPress: function (e) {
-    if (e?.key === "Enter" && e?.altKey) {
-      e.preventDefault();
-      const inpText = this.findbar._findField.value.trim();
-      this.sendMessage(inpText);
-      this.findbar._findField.value = "";
-      this.focusInput();
-    }
+  handleInputKeyPress(e) {
+    if (e?.key !== "Enter" || !e?.altKey) return;
+    e.preventDefault();
+    this._askFromField(e.currentTarget);
   },
+
+  // Copy the current native query into the floating composer, show the panel,
+  // and send it when non-empty (existing Ask / Alt+Enter behavior). The native
+  // findbar stays open and untouched; only its find field value is cleared.
+  _askFromField(field) {
+    if (!this.panel) return;
+    const query = field?.value?.trim() || "";
+    this.panel.setPromptText(query);
+    if (field) field.value = "";
+    this.show();
+    if (query) this.panel.sendFromComposer();
+    this.focusPrompt();
+  },
+
+  // --- Context menu (delegates to the panel) -------------------------------
 
   _ensureContextMenuListener(contextMenu) {
     if (!contextMenu) return;
@@ -1348,9 +314,9 @@ export const browseBotFindbar = {
     }
 
     const menuItem = parseElement(
-      `<menuitem 
+      `<menuitem
       label="Ask AI"
-      accesskey="A" 
+      accesskey="A"
       id = "browse-bot-context-menu-item">
       </menuitem>`,
       "xul"
@@ -1386,7 +352,7 @@ export const browseBotFindbar = {
     this._ensureContextMenuListener(contextMenu);
   },
 
-  removeContextMenuItem: function () {
+  removeContextMenuItem() {
     if (this._contextMenuRetryTimer) {
       clearTimeout(this._contextMenuRetryTimer);
       this._contextMenuRetryTimer = null;
@@ -1401,6 +367,7 @@ export const browseBotFindbar = {
     document.querySelectorAll("#browse-bot-context-menu-item").forEach((item) => item.remove());
     this.contextMenuItem = null;
   },
+
   handleContextMenuClick: async function () {
     const selection = await messageManagerAPI.getSelectedText();
     let finalMessage;
@@ -1421,10 +388,11 @@ export const browseBotFindbar = {
     }
   },
 
-  handleContextMenuPrefChange: function (pref) {
+  handleContextMenuPrefChange(pref) {
     if (pref.value) this.addContextMenuItem();
     else this.removeContextMenuItem();
   },
+
   updateContextMenuText() {
     if (!PREFS.contextMenuEnabled) return;
     const items = document.querySelectorAll("#browse-bot-context-menu-item");
@@ -1439,276 +407,5 @@ export const browseBotFindbar = {
     if (!this.contextMenuItem) return;
     const hasSelection = gContextMenu?.isTextSelected === true;
     this.contextMenuItem.label = hasSelection ? "Ask AI" : "Summarize with AI";
-  },
-
-  enableResize() {
-    if (!this.findbar || this._resizeHandle) return;
-    const resizeHandle = parseElement(`<div class="findbar-resize-handle"></div>`);
-    this.findbar.appendChild(resizeHandle);
-    this._resizeHandle = resizeHandle;
-    this._startResize = this.startResize.bind(this);
-    this._resizeHandle.addEventListener("mousedown", this._startResize);
-  },
-
-  startResize(e) {
-    if (e.button !== 0 || !this.findbar) return;
-    this._isResizing = true;
-    this._initialMouseCoor = { x: e.clientX, y: e.clientY };
-    const rect = this.findbar.getBoundingClientRect();
-    this.startWidth = rect.width;
-    this._handleResize = this.doResize.bind(this);
-    this._stopResize = this.stopResize.bind(this);
-    document.addEventListener("mousemove", this._handleResize);
-    document.addEventListener("mouseup", this._stopResize);
-  },
-
-  doResize(e) {
-    if (!this._isResizing || !this.findbar) return;
-    const minWidth = 300;
-    const maxWidth = 800;
-    const directionFactor = PREFS.position.includes("right") ? -1 : 1;
-    let newWidth = this.startWidth + (e.clientX - this._initialMouseCoor.x) * directionFactor;
-    newWidth = Math.min(Math.max(newWidth, minWidth), maxWidth);
-    this.findbar.style.width = `${newWidth}px`;
-    this._updateFindbarDimensions();
-  },
-
-  stopResize() {
-    this._isResizing = false;
-    document.removeEventListener("mousemove", this._handleResize);
-    document.removeEventListener("mouseup", this._stopResize);
-    this._handleResize = null;
-    this._stopResize = null;
-    this._updateFindbarDimensions();
-    this._saveFindbarDimensions();
-  },
-  disableResize() {
-    this._resizeHandle?.remove();
-    this._resizeHandle = null;
-    this.stopResize();
-  },
-
-  startDrag(e) {
-    if (!this.chatContainer || e.button !== 0) return;
-    this._isDragging = true;
-    this._initialMouseCoor = { x: e.clientX, y: e.clientY };
-    const rect = this.findbar.getBoundingClientRect();
-    this._initialContainerCoor = { x: rect.left, y: rect.top };
-    this._handleDrag = this.doDrag.bind(this);
-    this._stopDrag = this.stopDrag.bind(this);
-    document.addEventListener("mousemove", this._handleDrag);
-    document.addEventListener("mouseup", this._stopDrag);
-  },
-
-  doDrag(e) {
-    if (!this._isDragging) return;
-    const minCoors = { x: 15, y: 35 };
-    const rect = this.findbar.getBoundingClientRect();
-    const maxCoors = {
-      x: window.innerWidth - rect.width - 33,
-      y: window.innerHeight - rect.height - 33,
-    };
-    const newCoors = {
-      x: this._initialContainerCoor.x + (e.clientX - this._initialMouseCoor.x),
-      y: this._initialContainerCoor.y + (e.clientY - this._initialMouseCoor.y),
-    };
-
-    newCoors.x -= getSidebarWidth();
-    newCoors.x = Math.max(minCoors.x, Math.min(newCoors.x, maxCoors.x));
-    newCoors.y = Math.max(minCoors.y, Math.min(newCoors.y, maxCoors.y));
-    if (PREFS.pseudoBg) this._updateFindbarDimensions();
-
-    this.findbar.style.setProperty("left", `${newCoors.x}px`, "important");
-    this.findbar.style.setProperty("top", `${newCoors.y}px`, "important");
-    this.findbar.style.setProperty("right", "unset", "important");
-    this.findbar.style.setProperty("bottom", "unset", "important");
-  },
-
-  stopDrag() {
-    this._isDragging = false;
-    if (!PREFS.pseudoBg) {
-      this.findbar.style.setProperty("transition", "all 0.3s ease", "important");
-      setTimeout(() => this.findbar.style.removeProperty("transition"), 400);
-      setTimeout(() => this._updateFindbarDimensions(), 401); // update dimensions after transition
-    }
-    this.snapToClosestCorner();
-    this._initialMouseCoor = { x: null, y: null };
-    this._initialContainerCoor = { x: null, y: null };
-    document.removeEventListener("mouseup", this._stopDrag);
-    document.removeEventListener("mousemove", this._handleDrag);
-    this._handleDrag = null;
-    this._stopDrag = null;
-    setTimeout(() => this._updateFindbarDimensions(), 0);
-  },
-
-  snapToClosestCorner() {
-    if (!this.findbar || !PREFS.dndEnabled) return;
-
-    const rect = this.findbar.getBoundingClientRect();
-    const currentX = rect.left;
-    const currentY = rect.top;
-    const findbarWidth = rect.width;
-    const findbarHeight = rect.height;
-
-    const snapPoints = {
-      "top-left": { x: 0, y: 0 },
-      "top-right": { x: window.innerWidth - findbarWidth, y: 0 },
-      "bottom-left": { x: 0, y: window.innerHeight - findbarHeight },
-      "bottom-right": {
-        x: window.innerWidth - findbarWidth,
-        y: window.innerHeight - findbarHeight,
-      },
-    };
-
-    let closestPointName = PREFS.position;
-    let minDistance = Infinity;
-
-    for (const name in snapPoints) {
-      const p = snapPoints[name];
-      const distance = Math.sqrt(Math.pow(currentX - p.x, 2) + Math.pow(currentY - p.y, 2));
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestPointName = name;
-      }
-    }
-
-    // Update preference if position changed
-    if (closestPointName !== PREFS.position) {
-      PREFS.position = closestPointName;
-    }
-    this.findbar.style.removeProperty("left");
-    this.findbar.style.removeProperty("top");
-    this.findbar.style.removeProperty("bottom");
-    this.findbar.style.removeProperty("right");
-    // this.applyFindbarPosition(closestPointName);
-  },
-  enableDND() {
-    if (!this.chatContainer) return;
-    const handle = this.chatContainer.querySelector(".findbar-drag-handle");
-    if (!handle) return;
-    this._startDrag = this.startDrag.bind(this);
-    handle.addEventListener("mousedown", this._startDrag);
-  },
-  disableDND() {
-    this._isDragging = false;
-    if (!this.chatContainer) return;
-    const handle = this.chatContainer.querySelector(".findbar-drag-handle");
-    if (!handle) return;
-    handle.removeEventListener("mousedown", this._startDrag);
-    document.removeEventListener("mouseup", this._stopDrag);
-    document.removeEventListener("mousemove", this._handleDrag);
-    this._startDrag = null;
-    this._stopDrag = null;
-  },
-
-  addKeymaps: function (e) {
-    if (e.key?.toLowerCase() === "escape") {
-      if (SettingsModal._modalElement && SettingsModal._modalElement.parentNode) {
-        e.preventDefault();
-        e.stopPropagation();
-        SettingsModal.hide();
-      } else if (this.expanded) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.expanded = false;
-        this.focusInput();
-      }
-    }
-  },
-
-  addListeners() {
-    this._updateFindbar = this.updateFindbar.bind(this);
-    this._addKeymaps = this.addKeymaps.bind(this);
-    this._handleInputKeyPress = this.handleInputKeyPress.bind(this);
-    const _clearLLMData = () => {
-      this.updateFindbarStatus();
-      this.clear();
-    };
-    const _handleContextMenuPrefChange = this.handleContextMenuPrefChange.bind(this);
-    const _handleMinimalPrefChange = this.handleMinimalPrefChange.bind(this);
-    const _handleBackgroundStyleChange = () => {
-      updateSidebarWidth();
-    };
-
-    gBrowser.tabContainer.addEventListener("TabSelect", this._updateFindbar);
-    document.addEventListener("keydown", this._addKeymaps);
-    this._handleFindbarOpenEvent = this.handleFindbarOpenEvent.bind(this);
-    this._handleFindbarCloseEvent = this.handleFindbarCloseEvent.bind(this);
-    window.addEventListener("findbaropen", this._handleFindbarOpenEvent);
-    window.addEventListener("findbarclose", this._handleFindbarCloseEvent);
-    this._backgroundStylesListener = addPrefListener(
-      PREFS.BACKGROUND_STYLE,
-      _handleBackgroundStyleChange
-    );
-    this._citationsListener = addPrefListener(PREFS.CITATIONS_ENABLED, _clearLLMData);
-    this._minimalListener = addPrefListener(PREFS.MINIMAL, _handleMinimalPrefChange);
-    this._contextMenuEnabledListener = addPrefListener(
-      PREFS.CONTEXT_MENU_ENABLED,
-      _handleContextMenuPrefChange
-    );
-    this._persistListener = addPrefListener(PREFS.PERSIST, (pref) => {
-      if (!this.findbar) return;
-      if (pref.value) this.findbar.history = browseBotFindbarLLM.history;
-      else this.findbar.history = null;
-    });
-    this._dndListener = addPrefListener(PREFS.DND_ENABLED, (pref) => {
-      if (pref.value) {
-        this.enableDND();
-        this.enableResize();
-      } else {
-        this.disableDND();
-        this.disableResize();
-      }
-    });
-  },
-
-  removeListeners() {
-    if (this.findbar) {
-      this.findbar._findField.removeEventListener("keypress", this._handleInputKeyPress);
-      this.findbar._findField.removeEventListener("input", this._handleFindFieldInput);
-    }
-    gBrowser.tabContainer.removeEventListener("TabSelect", this._updateFindbar);
-    document.removeEventListener("keydown", this._addKeymaps);
-    window.removeEventListener("findbaropen", this._handleFindbarOpenEvent);
-    window.removeEventListener("findbarclose", this._handleFindbarCloseEvent);
-    removePrefListener(this._backgroundStylesListener);
-    removePrefListener(this._citationsListener);
-    removePrefListener(this._contextMenuEnabledListener);
-    removePrefListener(this._minimalListener);
-    removePrefListener(this._persistListener);
-    removePrefListener(this._dndListener);
-    this.disableDND();
-
-    this._handleInputKeyPress = null;
-    this._updateFindbar = null;
-    this._addKeymaps = null;
-    this._citationsListener = null;
-    this._contextMenuEnabledListener = null;
-    this._minimalListener = null;
-    this._dndListener = null;
-    this._handleFindbarOpenEvent = null;
-    this._handleFindbarCloseEvent = null;
-  },
-
-  handleFindbarOpenEvent: function () {
-    if (this.enabled) {
-      PREFS.debugLog("Findbar is being opened");
-      setTimeout(() => (this.findbar._findField.placeholder = "Press Alt + Enter to ask AI"), 100);
-      setTimeout(() => this._updateFindbarDimensions(), 1);
-      setTimeout(() => {
-        if (this.expanded) this.focusPrompt();
-        else this.focusInput();
-      }, 2);
-    }
-  },
-
-  handleFindbarCloseEvent: function () {
-    if (this.enabled) {
-      PREFS.debugLog("Findbar is being closed");
-      if (this._isStreaming) {
-        this._abortController?.abort();
-      }
-    }
   },
 };

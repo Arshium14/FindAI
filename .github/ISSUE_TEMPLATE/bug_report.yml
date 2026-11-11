@@ -10,8 +10,8 @@ body:
       description: Please ensure you've completed all of the following.
       options:
         - label: I have read the documentation for the mod properly.
-        - label: I have read the [Contributing Guidelines](https://github.com/BibekBhusal0/zen-custom-js/blob/main/CONTRIBUTING.md#opening-an-issue) for this project.
-        - label: I have searched the [issue tracker](https://github.com/BibekBhusal0/zen-custom-js/issues) for a bug report that matches the one I want to file, without success.
+        - label: I have read the [Contributing Guidelines](../blob/main/CONTRIBUTING.md#opening-an-issue) for this project.
+        - label: I have searched the [issue tracker](../issues) for a bug report that matches the one I want to file, without success.
         - label: I have checked all the boxes without reading.
         - label: I have made sure that I'm on latest version of mod and also tested beta version for fix.
   - type: dropdown
@@ -22,13 +22,6 @@ body:
       multiple: true
       options:
         - BrowseBot
-        - Compact Settings
-        - Command Palette
-        - Floating Sidebar
-        - Reopen Closed Tabs
-        - Search Engine Icon
-        - Search Engine Select
-        - Settings Shortcuts Search
         - Other (please specify below)
   - type: input
     attributes:

@@ -4,7 +4,7 @@ If you'd like to contribute, you can get started by reading this guide, where I 
 
 ## About This Project
 
-This GitHub repo contains multiple mods made specifically for Zen Browser, which I made to solve specific problems I had or to enhance my browsing experience.
+This GitHub repo contains BrowseBot, an AI-powered floating panel, URL-bar, and Library agent for Zen Browser. It is a BrowseBot-focused fork of BibekBhusal0/zen-custom-js.
 
 ## Opening an Issue
 
@@ -85,7 +85,7 @@ This step is required because while installation sine will not include `.git` di
 
 ```
 .
-├── command-palette/
+├── findbar-ai/
 │   ├── README.md
 │   ├── style.css
 │   ├── preferences.json
@@ -94,18 +94,14 @@ This step is required because while installation sine will not include `.git` di
 │   ├── release-notes.md
 │   └── utils/
 │       └── prefs.js
-├── floating-sidebar/
-│   ├── README.md
-│   ├── index.js
-│   ├── style.css
-│   ├── theme.json
-│   └── release-notes.md
 ├── utils/
 │   ├── parse.js
 │   ├── favicon.js
 │   ├── zen-design.css
 │   ├── settings-modal.js
 │   └── settings-modal.css
+├── tests/
+│   └── browsebot/
 ├── templates/
 │   ├── CONTRIBUTING.template.md
 │   ├── config.template.yml
@@ -117,7 +113,7 @@ This step is required because while installation sine will not include `.git` di
 │   │   └── publish.js
 │   └── workflows/
 │       ├── publish-mods.yml
-│       └── format-code.yml
+│       └── update-and-build.yml
 ├── dist/
 ├── CONTRIBUTING.md
 ├── LICENSE
@@ -138,8 +134,8 @@ Each mod is in its own directory. Some important files each mod contains are:
 
 ### When Contributing
 
-- Keep mod-specific changes within that mod's directory
-- Update the mod's README.md if you're adding new features or including new prefs
+- Keep changes within the `findbar-ai/` directory
+- Update the README.md if you're adding new features or including new prefs
 - Keep files focused and under 1.5k lines when possible
 
 ## Development Guidelines
@@ -184,25 +180,15 @@ This will help you find and fix issues before they are caught by the CI.
 Bundling is only needed to produce the single-file releases shipped to the child repos, and CI handles that automatically at publish time. You don't need to build anything to use or test mods locally, including BrowseBot. These scripts exist for release work and require the optional Bun install:
 
 ```bash
-# Build all mods
+# Build BrowseBot
 bun run build
 
-# Build specific mod
+# Build BrowseBot (explicit target)
 bun run build:browsebot
-bun run build:palette
-bun run build:reopen
-bun run build:sidebar
-bun run build:select
-bun run build:search
 
 # Development mode with watch (auto-rebuild on changes)
-bun run dev                    # Only watches browse-bot(as it is the only one using npm packages)
-bun run dev:browsebot            # Watch specific mod
-bun run dev:palette
-bun run dev:reopen
-bun run dev:sidebar
-bun run dev:select
-bun run dev:search
+bun run dev
+bun run dev:browsebot
 
 # Other commands
 bun run format                 # Format code with Prettier
@@ -329,8 +315,8 @@ Pull request and commit names generally follow [conventional commits](https://ww
 ```
 <type>(<optional scope>): <present tense description>
 
-feat(command-palette): add cool new feature
-fix(search-engine-select): resolve memory leak issue
+feat(browsebot): add cool new feature
+fix(browsebot): resolve memory leak issue
 docs: add installation instructions
 ```
 

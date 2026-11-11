@@ -8,11 +8,11 @@ However, this repository is automatically maintained and **pull requests opened 
 
 Please open your pull request in the main repository instead:
 
-**Main Repository**: [BibekBhusal0/zen-custom-js/{MOD_FOLDER}](https://github.com/BibekBhusal0/zen-custom-js/tree/main/{MOD_FOLDER})
+**Main Repository**: [Arshium14/FindAI/{MOD_FOLDER}](https://github.com/Arshium14/FindAI/tree/main/{MOD_FOLDER})
 
 ### Steps:
 
-1. Fork the main repository: https://github.com/BibekBhusal0/zen-custom-js
+1. Fork the main repository: https://github.com/Arshium14/FindAI
 2. Make your changes in the `{MOD_FOLDER}` directory
 3. Open a pull request there
 

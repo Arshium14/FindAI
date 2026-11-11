@@ -361,8 +361,6 @@ export const SettingsModal = {
   _generateSettingsHtml() {
     const findbarSettings = [
       { label: "Enable AI Findbar", pref: PREFS.ENABLED },
-      { label: "Minimal Mode (similar to arc)", pref: PREFS.MINIMAL },
-      { label: "Persist Chat (don't persist when browser closes)", pref: PREFS.PERSIST },
       { label: "Enable Drag and Drop", pref: PREFS.DND_ENABLED },
       { label: "Remember Dimensions", pref: PREFS.REMEMBER_DIMENSIONS },
     ];
@@ -389,7 +387,6 @@ export const SettingsModal = {
           {
             solid: "Solid",
             acrylic: "Acrylic",
-            pseudo: "Pseudo",
           },
           { id: "pref-background-style" }
         ),

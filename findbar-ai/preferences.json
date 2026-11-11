@@ -941,15 +941,11 @@
   },
   {
     "property": "extension.browse-bot.library-ai.max-tool-calls",
-    "label": "Max Tool Calls",
+    "label": "Agent Max Tool Steps",
     "type": "dropdown",
-    "defaultValue": 0,
-    "description": "The maximum number of consecutive tool calls the AI can make in one turn. 0 means unlimited.",
+    "defaultValue": 8,
+    "description": "The maximum number of consecutive tool steps the agent can make in one turn. Defaults to 8 and is capped at 12.",
     "options": [
-      {
-        "value": 0,
-        "label": "Unlimited"
-      },
       {
         "value": 1,
         "label": "1"
@@ -967,12 +963,16 @@
         "label": "5"
       },
       {
+        "value": 8,
+        "label": "8"
+      },
+      {
         "value": 10,
         "label": "10"
       },
       {
-        "value": 20,
-        "label": "20"
+        "value": 12,
+        "label": "12"
       }
     ],
     "conditions": [
@@ -988,35 +988,6 @@
     "type": "separator",
     "id": "browse-bot-appearance-separator",
     "label": "Appearance & Behavior",
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.browse-bot.findbar-ai.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
-    "property": "extension.browse-bot.findbar-ai.minimal",
-    "label": "Enable Minimal Mode (Arc-style)",
-    "type": "checkbox",
-    "defaultValue": true,
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.browse-bot.findbar-ai.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
-    "property": "extension.browse-bot.findbar-ai.persist-chat",
-    "label": "Persist Chat History per Tab",
-    "type": "checkbox",
-    "defaultValue": false,
-    "description": "Saves the chat history for each tab. History is lost when the browser is closed.",
     "conditions": [
       {
         "if": {
@@ -1046,7 +1017,22 @@
     "label": "Remember Dimensions",
     "type": "checkbox",
     "defaultValue": true,
-    "description": "Automatically saves and restores the findbar's size.",
+    "description": "Automatically saves and restores the floating panel's width and height.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.browse-bot.findbar-ai.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.browse-bot.findbar-ai.height",
+    "label": "Panel Height",
+    "type": "number",
+    "defaultValue": 600,
+    "description": "The default height of the floating panel in pixels. Saved automatically when Remember Dimensions is enabled.",
     "conditions": [
       {
         "if": {
@@ -1061,7 +1047,7 @@
     "label": "Corner Position",
     "type": "dropdown",
     "defaultValue": "top-right",
-    "description": "The corner the findbar will snap to after being dragged.",
+    "description": "The corner the floating panel snaps to after being dragged.",
     "options": [
       {
         "value": "top-left",
@@ -1103,10 +1089,6 @@
       {
         "value": "acrylic",
         "label": "Acrylic"
-      },
-      {
-        "value": "pseudo",
-        "label": "Pseudo"
       }
     ],
     "conditions": [

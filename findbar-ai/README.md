@@ -62,7 +62,7 @@ For advanced users or those not using Sine or who are willing to contribute:
 2.  **Clone this Repository**: Open a terminal or command prompt, navigate to the `js` directory created by `fx-autoconfig` inside your profile folder, and clone the repository with the name `custom`:
 
     ```bash
-    git clone https://github.com/BibekBhusal0/zen-custom-js.git custom
+    git clone https://github.com/Arshium14/FindAI.git custom
     ```
 
 3.  **Import the Script**: In your JS directory, create a new file `import.uc.mjs` (or add to an existing one), and add the following line:
@@ -93,10 +93,10 @@ For advanced users or those not using Sine or who are willing to contribute:
 
 2.  **Save the Key**: Paste the key into the input field and click "Save". The chat interface will now appear.
 3.  **Start Chatting**:
-    - Press `Ctrl+F` to open the standard findbar.
-    - In the default (non-minimal) view, click the "Expand" button to switch to AI chat. In Minimal Mode, just enter your query and click "Ask".
-    - Type your questions about the current page and press on send button.
-    - Use `Ctrl+Shift+F` to open the AI chat directly, using any text you have selected on the page as the initial prompt (this shortcut will not work if it has been changed).
+    - Press `Ctrl+Shift+F` to open the persistent floating AI panel directly.
+    - Type your questions about the current page and press the send button.
+    - Use `@` to mention one or more open tabs for context.
+    - The panel stays open across tab switches, workspace switches, and Ctrl+F in other tabs.
 
 ### URL Bar AI Commands
 
@@ -134,6 +134,26 @@ BrowseBot integrates with [Zen Command Palette](https://github.com/Vertex-Mods/Z
     - **Expand findbar AI**: Opens the findbar directly in AI chat mode.
     - **Toggle BrowseBot Library**: Opens the BrowseBot section in the Zen Library.
 
+## Floating panel verification
+
+### Automated (passed)
+
+74 Node.js tests cover: agent controller bounds/cancellation/system override, tab reference parsing/resolution/redaction, tool activity redaction, keyless research limits/cleanup/abort, page interaction keys/submission/redaction, panel geometry (8-dir resize, collision, coalescing, persistence), and packaging/scope assertions. All 17 source files pass `node --check`. All 5 JSON metadata files are valid.
+
+### Manual (pending — requires Zen Browser)
+
+The following checks require a live Zen Browser instance with Sine and were **not performed** in this automated session:
+
+- [ ] One `#browse-bot-panel` remains connected after tab switches, workspace switches, and repeated Ctrl+F.
+- [ ] Draft, reference chips, message history, scroll position, dimensions, and streaming run survive those operations.
+- [ ] Hiding during streaming does not abort; reopening shows the completed or continuing run.
+- [ ] Native Ctrl+F text search works with Arc 2.0 enabled and does not inherit BrowseBot geometry.
+- [ ] Web research opens and cleans up temporary tabs; results are honest about failures.
+- [ ] Page interaction tools require confirmation for writes; typed values are redacted.
+- [ ] Eight-direction resizing works; dimensions survive restart.
+- [ ] Arc 2.0 native findbar, URL bar, and sidebar are unaffected.
+- [ ] No Arc preferences are written in `about:config`.
+
 ## 🔧 Customization
 
 You can customize the BrowseBot through the settings modal (found in the chat header) or via `about:config`.
@@ -147,13 +167,12 @@ You can customize the BrowseBot through the settings modal (found in the chat he
 | `extension.browse-bot.urlbar-ai-enabled`                              | Boolean | `true`                                                      | Toggles the URL bar AI feature on or off.                                                                                                                                   |
 | `extension.browse-bot.urlbar-ai.hide-suggestions`                     | Boolean | `true`                                                      | Hides autocomplete suggestions in the URL bar when AI mode is active.                                                                                                       |
 | `extension.browse-bot.urlbar-ai.animations-enabled`                   | Boolean | `true`                                                      | Enables animations for the URL bar AI.                                                                                                                                      |
-| `extension.browse-bot.findbar-ai.minimal`                             | Boolean | `true`                                                      | Toggles a simpler, more compact UI for the findbar.                                                                                                                         |
-| `extension.browse-bot.findbar-ai.persist-chat`                        | Boolean | `false`                                                     | Persists chat history across tab switches (but not browser restarts).                                                                                                       |
-| `extension.browse-bot.findbar-ai.dnd-enabled`                         | Boolean | `true`                                                      | Enables dragging to move and resizing of the findbar window.                                                                                                                |
-| `extension.browse-bot.findbar-ai.remember-dimensions`                 | Boolean | `true`                                                      | Remembers the size of the findbar window across sessions.                                                                                                                   |
-| `extension.browse-bot.findbar-ai.width`                               | Number  | `500`                                                       | The width of the findbar.                                                                                                                                                   |
-| `extension.browse-bot.findbar-ai.position`                            | String  | `"top-right"`                                               | Sets the corner where the findbar snaps. Options: `top-left`, `top-right`, `bottom-left`, `bottom-right`.                                                                   |
-| `extension.browse-bot.findbar-ai.background-style`                    | String  | `"solid"`                                                   | The background style of the findbar. Options: `solid`, `acrylic`, `pseudo`.                                                                                                 |
+| `extension.browse-bot.findbar-ai.dnd-enabled`                         | Boolean | `true`                                                      | Enables dragging to move and resizing of the floating panel.                                                                                                                |
+| `extension.browse-bot.findbar-ai.remember-dimensions`                 | Boolean | `true`                                                      | Remembers the floating panel's width and height across sessions.                                                                                                            |
+| `extension.browse-bot.findbar-ai.width`                               | Number  | `500`                                                       | The width of the floating panel.                                                                                                                                            |
+| `extension.browse-bot.findbar-ai.height`                              | Number  | `600`                                                       | The height of the floating panel.                                                                                                                                           |
+| `extension.browse-bot.findbar-ai.position`                            | String  | `"top-right"`                                               | Sets the corner where the floating panel snaps. Options: `top-left`, `top-right`, `bottom-left`, `bottom-right`.                                                            |
+| `extension.browse-bot.findbar-ai.background-style`                    | String  | `"solid"`                                                   | The background style of the floating panel. Options: `solid`, `acrylic`.                                                                                                    |
 | `extension.browse-bot.llm-provider`                                   | String  | `"pollinations"`                                            | Which AI provider to use. Options: `pollinations`, `gemini`, `mistral`, `openai`, `claude`, `grok`, `perplexity`, `cerebras`, `deepseek`, `openrouter`, `ollama`, `custom`. |
 | `extension.browse-bot.pollinations-model`                             | String  | `"openai"`                                                  | The Pollinations model ID to use. Pick from the live-fetched list in settings.                                                                                              |
 | `extension.browse-bot.pollinations-api-key`                           | String  | _(empty)_                                                   | Optional personal key from enter.pollinations.ai. Unlocks more models and tool use; without it the free anonymous tier applies.                                             |
@@ -184,7 +203,7 @@ You can customize the BrowseBot through the settings modal (found in the chat he
 | `extension.browse-bot.findbar-ai.context-menu-autosend`               | Boolean | `true`                                                      | If true, clicking the context menu item sends the request to the AI immediately.                                                                                            |
 | `extension.browse-bot.findbar-ai.context-menu-command-no-selection`   | String  | `"Summarize current page"`                                  | The command to send when no text is selected.                                                                                                                               |
 | `extension.browse-bot.findbar-ai.context-menu-command-with-selection` | String  | `"Explain this in context of current page:\n\n{selection}"` | The command to send when text is selected. `{selection}` is the placeholder.                                                                                                |
-| `extension.browse-bot.library-ai.max-tool-calls`                      | Number  | `0`                                                         | The maximum number of consecutive tool calls the AI can make in one turn. `0` means unlimited.                                                                              |
+| `extension.browse-bot.library-ai.max-tool-calls`                      | Number  | `8`                                                         | The maximum number of consecutive tool calls the AI can make in one turn. Default 8, hard max 12. Old `0` (unlimited) migrates to 8.                                       |
 | `extension.browse-bot.findbar-ai.max-context-chars`                   | Number  | `0`                                                         | Maximum page or transcript characters sent per message. `0` means unlimited.                                                                                                |
 | `extension.browse-bot.findbar-ai.system-prompt`                       | String  | _(empty)_                                                   | Custom system prompt for the findbar AI.                                                                                                                                    |
 | `extension.browse-bot.urlbar-ai.system-prompt`                        | String  | _(empty)_                                                   | Custom system prompt for the URL bar AI.                                                                                                                                    |
@@ -226,10 +245,10 @@ Default keyboard shortcuts:
 
 ## 🔨 Tool-calls
 
-Tool calls live in the **Library AI agent mode**, which stays open across tab and workspace switches, so long multi-step runs are never aborted by navigation.
+Tool calls live in the **Library AI agent mode** and the **floating AI panel**, both powered by the shared AgentController. The floating panel stays open across tab and workspace switches, so long multi-step runs are never aborted by navigation.
 
 > [!NOTE]
-> The **Findbar AI** is page Q&A only and makes no tool calls. The **URL Bar AI** uses a focused subset for quick actions: `Search`, `Navigation`, and `UI Feedback` (toast notifications).
+> The **URL Bar AI** uses a focused subset for quick actions: `Search`, `Navigation`, and `UI Feedback` (toast notifications). It does not have research or page interaction tools.
 
 Currently available tool calls are (full set in Library agent mode):
 
@@ -246,7 +265,7 @@ Currently available tool calls are (full set in Library agent mode):
 
 - [ ] Pin/unpin the findbar
 - [x] Context Menu integration
-- [x] Different background styles (solid, acrylic, pseudo)
+- [x] Different background styles (solid, acrylic)
 - [ ] Smooth animations for all interactions
 - [x] Custom system prompts
 - [x] Add Settings.

@@ -1,336 +1,6 @@
 [
   {
     "type": "text",
-    "label": "**Zen Command Palette**",
-    "size": "18px",
-    "margin": "20px 0 10px 0"
-  },
-  {
-    "type": "text",
-    "label": "Configure the behavior of the command palette. All changes real time (no need to restart)"
-  },
-  {
-    "type": "separator",
-    "label": "General Behavior",
-    "margin": "25px 0 15px 0"
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.prefix-required",
-    "label": "Require prefix to show commands",
-    "defaultValue": false
-  },
-  {
-    "type": "dropdown",
-    "property": "zen-command-palette.max-commands",
-    "label": "Maximum Results (without )",
-    "value": "number",
-    "defaultValue": 3,
-    "placeholder": false,
-    "options": [
-      {
-        "label": "1 Command",
-        "value": 1
-      },
-      {
-        "label": "2 Commands",
-        "value": 2
-      },
-      {
-        "label": "3 Commands",
-        "value": 3
-      },
-      {
-        "label": "4 Commands",
-        "value": 4
-      },
-      {
-        "label": "5 Commands",
-        "value": 5
-      }
-    ]
-  },
-  {
-    "type": "dropdown",
-    "property": "zen-command-palette.max-commands-prefix",
-    "label": "Maximum Results. You can scroll so keep this value high.",
-    "value": "number",
-    "defaultValue": 50,
-    "placeholder": false,
-    "options": [
-      {
-        "label": "20 Commands",
-        "value": 20
-      },
-      {
-        "label": "30 Commands",
-        "value": 30
-      },
-      {
-        "label": "50 Commands",
-        "value": 50
-      },
-      {
-        "label": "80 Commands",
-        "value": 80
-      },
-      {
-        "label": "100 Commands",
-        "value": 100
-      }
-    ]
-  },
-  {
-    "type": "dropdown",
-    "property": "zen-command-palette.min-query-length",
-    "label": "Activation Length (without )",
-    "value": "number",
-    "defaultValue": 3,
-    "placeholder": false,
-    "options": [
-      {
-        "label": "2 Characters",
-        "value": 2
-      },
-      {
-        "label": "3 Characters",
-        "value": 3
-      },
-      {
-        "label": "4 Characters",
-        "value": 4
-      },
-      {
-        "label": "5 Characters",
-        "value": 5
-      }
-    ]
-  },
-  {
-    "type": "dropdown",
-    "property": "zen-command-palette.min-score-threshold",
-    "label": "Fuzzy Search Sensitivity",
-    "value": "number",
-    "defaultValue": 150,
-    "placeholder": false,
-    "options": [
-      {
-        "label": "Super Strict (350)",
-        "value": 350
-      },
-      {
-        "label": "Very Strict (300)",
-        "value": 300
-      },
-      {
-        "label": "Strict (250)",
-        "value": 250
-      },
-      {
-        "label": "Balanced (200)",
-        "value": 200
-      },
-      {
-        "label": "Loose (150)",
-        "value": 150
-      },
-      {
-        "label": "Very Loose (100)",
-        "value": 100
-      }
-    ]
-  },
-  {
-    "type": "dropdown",
-    "value": "number",
-    "property": "browser.urlbar.maxRichResults",
-    "label": "The number of search suggestions",
-    "defaultValue": 1,
-    "placeholder": false,
-    "options": [
-      {
-        "label": "5",
-        "value": 5
-      },
-      {
-        "label": "6",
-        "value": 6
-      },
-      {
-        "label": "7",
-        "value": 7
-      },
-      {
-        "label": "8",
-        "value": 8
-      },
-      {
-        "label": "9",
-        "value": 9
-      },
-      {
-        "label": "10",
-        "value": 10
-      },
-      {
-        "label": "12",
-        "value": 12
-      }
-    ]
-  },
-  {
-    "type": "separator",
-    "label": "Dynamic Commands",
-    "margin": "25px 0 15px 0"
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.search-engines",
-    "label": "Enable Search Engine commands",
-    "defaultValue": true
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.extensions",
-    "label": "Enable Extension commands",
-    "defaultValue": true
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.workspaces",
-    "label": "Enable Workspace commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.folders",
-    "label": "Enable Folder Management commands",
-    "defaultValue": true
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.sine-mods",
-    "label": "Enable Sine Mod Management commands",
-    "defaultValue": true
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.container-tabs",
-    "label": "Enable Container Tab commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.active-tabs",
-    "label": "Enable Active Tab switching commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.unload-tab",
-    "label": "Enable Active Tab unloading commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.extension-enable-disable",
-    "label": "Enable Extension Enable/Disable commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.extension-uninstall",
-    "label": "Enable Extension Uninstall commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.profiles",
-    "label": "Enable Profile switching commands",
-    "defaultValue": true
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.about-pages",
-    "label": "Enable `about:` page commands",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.dynamic.quick-split",
-    "label": "Enable Quick Split (split view and glance from the palette)",
-    "defaultValue": true
-  },
-  {
-    "type": "separator",
-    "label": "Quick Split",
-    "margin": "25px 0 15px 0"
-  },
-  {
-    "type": "text",
-    "label": "Type `site1 | site2` for side-by-side, `site1 - site2` for stacked, mixing both for grid, or `+site` for glance in the palette. A leading/trailing separator uses the current tab (e.g. `| gh`). `-` and `_` need spaces around them. Manage keywords in the palette settings, in the Quick Split section."
-  },
-  {
-    "type": "string",
-    "property": "zen-command-palette.quick-split.search-engine",
-    "label": "Search Engine",
-    "placeholder": "Empty for DuckDuckGo Lucky",
-    "defaultValue": "",
-    "description": "Empty means DuckDuckGo Lucky, Google Lucky means Google Lucky. Both jump to the first result."
-  },
-  {
-    "type": "separator",
-    "label": "Development",
-    "margin": "25px 0 15px 0"
-  },
-  {
-    "type": "checkbox",
-    "property": "zen-command-palette.debug-mode",
-    "label": "Enable debug logging in Browser Console",
-    "defaultValue": false
-  },
-  {
-    "type": "text",
-    "label": "",
-    "margin": "30px 0 0 0"
-  },
-  {
-    "type": "text",
-    "label": "**Compact Settings**",
-    "size": "18px",
-    "margin": "20px 0 10px 0"
-  },
-  {
-    "property": "compact-settings.enabled",
-    "label": "Compact Settings",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "property": "compact-settings.animation.enabled",
-    "label": "Hover Animations",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "property": "compact-settings.compact-addons.enabled",
-    "label": "Compact Addons",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "property": "compact-settings.addons.grid-enabled",
-    "label": "Grid Addons",
-    "type": "checkbox",
-    "defaultValue": true
-  },
-  {
-    "type": "text",
-    "label": "",
-    "margin": "30px 0 0 0"
-  },
-  {
-    "type": "text",
     "label": "**Browse Bot**",
     "size": "18px",
     "margin": "20px 0 10px 0"
@@ -1277,15 +947,11 @@
   },
   {
     "property": "extension.browse-bot.library-ai.max-tool-calls",
-    "label": "Max Tool Calls",
+    "label": "Agent Max Tool Steps",
     "type": "dropdown",
-    "defaultValue": 0,
-    "description": "The maximum number of consecutive tool calls the AI can make in one turn. 0 means unlimited.",
+    "defaultValue": 8,
+    "description": "The maximum number of consecutive tool steps the agent can make in one turn. Defaults to 8 and is capped at 12.",
     "options": [
-      {
-        "value": 0,
-        "label": "Unlimited"
-      },
       {
         "value": 1,
         "label": "1"
@@ -1303,12 +969,16 @@
         "label": "5"
       },
       {
+        "value": 8,
+        "label": "8"
+      },
+      {
         "value": 10,
         "label": "10"
       },
       {
-        "value": 20,
-        "label": "20"
+        "value": 12,
+        "label": "12"
       }
     ],
     "conditions": [
@@ -1324,35 +994,6 @@
     "type": "separator",
     "id": "browse-bot-appearance-separator",
     "label": "Appearance & Behavior",
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.browse-bot.findbar-ai.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
-    "property": "extension.browse-bot.findbar-ai.minimal",
-    "label": "Enable Minimal Mode (Arc-style)",
-    "type": "checkbox",
-    "defaultValue": true,
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.browse-bot.findbar-ai.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
-    "property": "extension.browse-bot.findbar-ai.persist-chat",
-    "label": "Persist Chat History per Tab",
-    "type": "checkbox",
-    "defaultValue": false,
-    "description": "Saves the chat history for each tab. History is lost when the browser is closed.",
     "conditions": [
       {
         "if": {
@@ -1382,7 +1023,22 @@
     "label": "Remember Dimensions",
     "type": "checkbox",
     "defaultValue": true,
-    "description": "Automatically saves and restores the findbar's size.",
+    "description": "Automatically saves and restores the floating panel's width and height.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.browse-bot.findbar-ai.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.browse-bot.findbar-ai.height",
+    "label": "Panel Height",
+    "type": "number",
+    "defaultValue": 600,
+    "description": "The default height of the floating panel in pixels. Saved automatically when Remember Dimensions is enabled.",
     "conditions": [
       {
         "if": {
@@ -1397,7 +1053,7 @@
     "label": "Corner Position",
     "type": "dropdown",
     "defaultValue": "top-right",
-    "description": "The corner the findbar will snap to after being dragged.",
+    "description": "The corner the floating panel snaps to after being dragged.",
     "options": [
       {
         "value": "top-left",
@@ -1439,10 +1095,6 @@
       {
         "value": "acrylic",
         "label": "Acrylic"
-      },
-      {
-        "value": "pseudo",
-        "label": "Pseudo"
       }
     ],
     "conditions": [
@@ -1774,182 +1426,5 @@
     "type": "checkbox",
     "defaultValue": false,
     "description": "Enables verbose logging in the Browser Console for troubleshooting."
-  },
-  {
-    "type": "text",
-    "label": "",
-    "margin": "30px 0 0 0"
-  },
-  {
-    "type": "text",
-    "label": "**Floating Sidebar**",
-    "size": "18px",
-    "margin": "20px 0 10px 0"
-  },
-  {
-    "type": "checkbox",
-    "property": "extension.sidebar-right",
-    "label": "Float on the right side",
-    "defaultValue": false
-  },
-  {
-    "type": "text",
-    "label": "",
-    "margin": "30px 0 0 0"
-  },
-  {
-    "type": "text",
-    "label": "**Reopen Closed Tabs Menu**",
-    "size": "18px",
-    "margin": "20px 0 10px 0"
-  },
-  {
-    "type": "text",
-    "label": "Configure the behavior of the Reopen Closed Tabs menu."
-  },
-  {
-    "type": "separator",
-    "label": "General Behavior",
-    "margin": "25px 0 15px 0"
-  },
-  {
-    "type": "checkbox",
-    "property": "extensions.reopen-closed-tabs.show-open-tabs",
-    "label": "Show Open Tabs in Menu",
-    "defaultValue": false
-  },
-  {
-    "type": "checkbox",
-    "property": "extensions.reopen-closed-tabs.show-sync-tabs",
-    "label": "Show Synced Tabs in Menu",
-    "defaultValue": true
-  },
-  {
-    "type": "string",
-    "property": "extensions.reopen-closed-tabs.shortcut-key",
-    "label": "Activation Shortcut",
-    "defaultValue": "Alt+A"
-  },
-  {
-    "type": "separator",
-    "label": "Development",
-    "margin": "25px 0 15px 0"
-  },
-  {
-    "type": "checkbox",
-    "property": "extensions.reopen-closed-tabs.debug-mode",
-    "label": "Enable debug logging in Browser Console",
-    "defaultValue": false
-  },
-  {
-    "type": "text",
-    "label": "",
-    "margin": "30px 0 0 0"
-  },
-  {
-    "type": "text",
-    "label": "**Search Engine Select**",
-    "size": "18px",
-    "margin": "20px 0 10px 0"
-  },
-  {
-    "property": "extension.search-engine-select.enabled",
-    "label": "Enable Search Engine Select",
-    "type": "checkbox",
-    "placeholder": false,
-    "defaultValue": true,
-    "description": "Globally enables or disables the floating search engine switcher UI."
-  },
-  {
-    "property": "extension.search-engine-select.remember-position",
-    "label": "Remember UI Position",
-    "type": "checkbox",
-    "placeholder": false,
-    "defaultValue": true,
-    "description": "Saves the vertical position of the switcher after you drag it.",
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.search-engine-select.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
-    "property": "extension.search-engine-select.size",
-    "label": "UI Size",
-    "type": "dropdown",
-    "defaultValue": "normal",
-    "options": [
-      {
-        "label": "Small",
-        "value": "small"
-      },
-      {
-        "label": "Normal",
-        "value": "normal"
-      },
-      {
-        "label": "Large",
-        "value": "large"
-      }
-    ],
-    "description": "Adjust the overall size of the search engine switcher."
-  },
-  {
-    "property": "extension.search-engine-select.theme",
-    "label": "UI Theme",
-    "type": "dropdown",
-    "defaultValue": "dark",
-    "options": [
-      {
-        "label": "Dark",
-        "value": "dark"
-      },
-      {
-        "label": "Light",
-        "value": "light"
-      },
-      {
-        "label": "AMOLED",
-        "value": "amoled"
-      }
-    ],
-    "description": "Choose a visual style for the switcher."
-  },
-  {
-    "property": "extension.search-engine-select.autohide",
-    "label": "Auto-hide UI",
-    "type": "dropdown",
-    "defaultValue": "off",
-    "options": [
-      {
-        "label": "Off",
-        "value": "off"
-      },
-      {
-        "label": "Translucent until hover",
-        "value": "translucent"
-      },
-      {
-        "label": "Fully hidden until hover",
-        "value": "hidden"
-      }
-    ],
-    "description": "Hide the switcher until hovered. Translucent leaves a faint edge visible; Fully hidden is invisible until hovered."
-  },
-  {
-    "property": "extension.search-engine-select.debug-mode",
-    "label": "Enable Debug Mode",
-    "type": "checkbox",
-    "placeholder": false,
-    "defaultValue": false,
-    "description": "Outputs detailed script information to the Browser Console."
-  },
-  {
-    "type": "text",
-    "label": "",
-    "margin": "30px 0 0 0"
   }
 ]

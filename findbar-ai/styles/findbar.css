@@ -1,38 +1,17 @@
-.hidden {
-  display: none !important;
-}
-
-browser {
-  will-change: transform;
-}
-
-@keyframes initial-animation {
-  from {
-    opacity: 0;
-    filter: blur(5px);
-    transform: translateY(-10px);
-  }
-
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
-  }
-}
-
-@keyframes glass-disappear {
-  0% {
-    backdrop-filter: var(--browse-bot-dialog-backdrop-filter);
-  }
-
-  99% {
-    backdrop-filter: var(--browse-bot-dialog-backdrop-filter);
-  }
-
-  100% {
-    backdrop-filter: none;
-  }
-}
+/* Persistent browser-chrome floating panel styles (Task 8).
+ *
+ * The chat UI now lives in one #browse-bot-panel appended to #main-window,
+ * independent of the native findbar and of tabs. All chat/geometry selectors
+ * are rooted at #browse-bot-panel. The native findbar keeps only the Ask AI
+ * button rule: no native geometry, no !important positioning, and no overrides
+ * of native match elements or their display.
+ *
+ * Arc 2.0 invariants: the panel is position:fixed at the BrowseBot stacking
+ * level (z-index 2147483000) and never transforms .browserStack or Arc elements.
+ *
+ * pulse/spin keyframes are retained because library/library.css also animates
+ * with them; they are defined only here.
+ */
 
 @keyframes pulse {
   0%,
@@ -42,22 +21,6 @@ browser {
 
   50% {
     opacity: 1;
-  }
-}
-
-@keyframes thinking-bar {
-  0% {
-    transform: translateX(-30%);
-    opacity: 0.4;
-  }
-
-  50% {
-    opacity: 1;
-  }
-
-  100% {
-    transform: translateX(30%);
-    opacity: 0.4;
   }
 }
 
@@ -77,887 +40,727 @@ browser {
       --menu-image: url("chrome://browser/skin/zen-icons/bolt.svg");
     }
   }
+}
 
-  findbar {
-    padding-inline-start: 0px !important;
-    padding-inline-end: 5px !important;
-    padding-top: 1px !important;
-    padding-bottom: 2px !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    box-sizing: border-box;
-    position: fixed;
-    top: 35px;
-    right: 15px;
-    width: 500px;
-    max-width: 800px !important;
-    min-width: 300px !important;
-    min-height: unset !important;
-    height: unset !important;
-    border-radius: var(--zenux-radius-m) !important;
-    outline: 1px solid rgba(0, 0, 0, 1) !important;
-    border: 1px solid light-dark(rgba(20, 20, 20, 0.2), rgba(235, 235, 235, 0.3)) !important;
-    z-index: 9999;
-    opacity: 1;
-    background: var(--browse-bot-dialog-bg) !important;
-    backdrop-filter: var(--browse-bot-dialog-backdrop-filter);
-    transition:
-      opacity 0.2s ease,
-      transform 0.2s ease,
-      filter 0.2s ease,
-      visibility 0.2s ease !important;
-    animation: initial-animation 0.2s ease;
-    filter: blur(0);
+/* --- Panel root (Task 8 brief block plus explicit grid rows) -------------- */
 
-    &[hidden] {
-      display: flex !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
-      opacity: 0 !important;
-      filter: blur(5px);
-      transform: translateY(-10px);
-      transition:
-        opacity 0.2s ease,
-        transform 0.2s ease,
-        filter 0.2s ease,
-        visibility 0s ease 0.2s !important;
-      animation: glass-disappear 0.2s linear !important;
-      animation-fill-mode: forwards !important;
+#browse-bot-panel {
+  --browse-bot-panel-radius: var(--arc-border-radius, var(--zenux-radius-l, 12px));
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  min-width: 320px;
+  min-height: 240px;
+  overflow: hidden;
+  border-radius: var(--browse-bot-panel-radius);
+  background: var(--arc-findbar-bg, var(--browse-bot-dialog-bg));
+  backdrop-filter: blur(var(--arc-findbar-blur, 24px)) saturate(var(--arc-findbar-saturate, 1)) contrast(var(--arc-findbar-contrast, 1));
+  color: var(--zenux-text);
+  box-shadow: var(--zenux-shadow-l);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+}
+
+#browse-bot-panel[hidden] {
+  display: none;
+}
+
+/* Descendant containers toggled with the hidden attribute (tool activity, the
+ * Stop button) stay hidden even where a display rule below would apply. */
+#browse-bot-panel [hidden] {
+  display: none !important;
+}
+
+/* --- Header (grid row 1, drag handle) ------------------------------------- */
+
+#browse-bot-panel > .browse-bot-panel-header {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--zenux-separator);
+  cursor: move;
+  user-select: none;
+}
+
+#browse-bot-panel .browse-bot-panel-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--zenux-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#browse-bot-panel .browse-bot-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* --- Tool activity (row 2) and reference chips (row 4) ---------------------
+ * Containers exist per the Task 8 template; Task 9 populates them. They
+ * collapse while hidden/empty so the messages row keeps the flexible space.
+ * Explicit grid-row assignments keep messages/composer in rows 3/5 even when
+ * these siblings are display:none. */
+
+#browse-bot-panel > .browse-bot-tool-activity {
+  grid-row: 2;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--zenux-separator);
+  font-size: 12px;
+  color: var(--zenux-muted);
+}
+
+/* The run box fits the row instead of scrolling it: a long run collapses to its
+ * summary, and the summary stays readable at the panel's minimum width. */
+#browse-bot-panel > .browse-bot-tool-activity:empty {
+  display: none;
+}
+
+#browse-bot-panel > .browse-bot-tool-activity > .bb-tool-run {
+  width: 100%;
+  min-width: 0;
+}
+
+#browse-bot-panel > .browse-bot-reference-chips {
+  grid-row: 4;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+#browse-bot-panel > .browse-bot-reference-chips:empty {
+  display: none;
+}
+
+/* --- Messages (grid row 3, the flexible scrolling region) ------------------ */
+
+#browse-bot-panel > .browse-bot-messages {
+  grid-row: 3;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 10px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--zenux-muted) transparent;
+}
+
+/* --- Composer (grid row 5) ------------------------------------------------- */
+
+#browse-bot-panel > .browse-bot-composer {
+  grid-row: 5;
+  /* Anchor for the @-mention popup, which floats above the composer. */
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--zenux-separator);
+}
+
+/* Floating counterpart of the Library's .bb-library-popup positioning wrapper.
+ * Only the placement is surface-specific; the row visuals are shared below. */
+#browse-bot-panel .bb-ref-popup {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 6px);
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--zenux-bg);
+  border: 1px solid var(--zenux-border);
+  border-radius: var(--zenux-radius-m);
+  box-shadow: var(--zenux-shadow-l);
+  padding: 3px;
+  z-index: 10;
+}
+
+/* The floating run box is a native <details>, so the chevron follows [open]
+ * instead of the Library's .is-collapsed class. */
+#browse-bot-panel .bb-tool-run-chevron {
+  transform: rotate(0deg);
+}
+
+#browse-bot-panel .bb-tool-run:not([open]) .bb-tool-run-chevron {
+  transform: rotate(-90deg);
+}
+
+#browse-bot-panel .browse-bot-composer textarea[data-prompt] {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  min-height: 34px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 14px !important;
+  line-height: 1.4;
+}
+
+#browse-bot-panel .browse-bot-composer [data-action="send"],
+#browse-bot-panel .browse-bot-composer [data-action="stop"] {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+/* --- Resize handles (absolutely positioned, out of grid flow) --------------
+ * PanelGestures delegates pointerdown via closest("[data-resize]"), so each
+ * handle only needs a positioned hit area and the matching cursor. */
+
+#browse-bot-panel > .browse-bot-resize-handle {
+  position: absolute;
+  z-index: 3;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="n"] {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: n-resize;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="s"] {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: s-resize;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="e"] {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  cursor: e-resize;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="w"] {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  cursor: w-resize;
+}
+
+/* Corners paint above edges so the diagonal gesture wins at the intersection.
+ * Header/composer padding (>=10px) keeps action buttons clear of the 10px
+ * corner hit areas. */
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="ne"],
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="nw"],
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="se"],
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="sw"] {
+  width: 10px;
+  height: 10px;
+  z-index: 4;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="ne"] {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="nw"] {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="se"] {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+#browse-bot-panel > .browse-bot-resize-handle[data-resize="sw"] {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+
+/* --- Shared agent UI visuals (Task 9) -------------------------------------
+ * Same .bb-* class names and zenux token values as library/library.css, scoped
+ * to #browse-bot-panel so the floating surface renders chips, popup rows,
+ * activity, and confirmations without inheriting the Library's XUL overrides.
+ * The Library keeps its layout-specific wrappers in library.css. */
+
+#browse-bot-panel {
+  .bb-ref-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 220px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--zenux-text);
+    background: var(--zenux-accent-soft);
+    border: 1px solid var(--zenux-accent-border);
+    border-radius: var(--zenux-radius-pill);
+    padding: 2px 8px;
+
+    img {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
     }
 
-    &[noanim] {
-      transition: none !important;
-      animation: none !important;
+    span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .findbar-resize-handle {
-      /* background: red; */
-      width: 3px;
-      height: calc(100% - 1px);
-      position: absolute;
-      right: 0;
+    .bb-ref-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: inherit;
+      opacity: 0.55;
+      padding: 0 0 0 2px;
+      line-height: 1;
 
-      @media not -moz-pref("extension.browse-bot.findbar-ai.dnd-enabled") {
-        display: none !important;
+      img {
+        width: 12px;
+        height: 12px;
+        display: block;
+        -moz-context-properties: fill, stroke;
+        fill: currentColor;
+        stroke: currentColor;
       }
-    }
-
-    @media -moz-pref("extension.browse-bot.findbar-ai.position", "top-right") {
-      top: 35px;
-      left: calc(100% - 15px - var(--findbar-width));
-
-      .findbar-resize-handle {
-        left: 0;
-        cursor: w-resize;
-      }
-    }
-
-    @media -moz-pref("extension.browse-bot.findbar-ai.position", "top-left") {
-      top: 35px;
-      left: 15px;
-
-      .findbar-resize-handle {
-        right: 0;
-        cursor: e-resize;
-      }
-    }
-
-    @media -moz-pref("extension.browse-bot.findbar-ai.position", "bottom-right") {
-      top: calc(100% - 15px - var(--findbar-height));
-      left: calc(100% - 15px - var(--findbar-width));
-
-      .findbar-resize-handle {
-        left: 0;
-        cursor: w-resize;
-      }
-    }
-
-    @media -moz-pref("extension.browse-bot.findbar-ai.position", "bottom-left") {
-      top: calc(100% - 15px - var(--findbar-height));
-      left: 15px;
-
-      .findbar-resize-handle {
-        right: 0;
-        cursor: e-resize;
-      }
-    }
-
-    .findbar-closebutton,
-    .clear-chat-btn,
-    .settings-btn,
-    .findbar-collapse-btn {
-      width: 28px !important;
-      height: 28px !important;
-      -moz-context-properties: fill !important;
-      fill: light-dark(black, white) !important;
-
-      label {
-        display: none !important;
-      }
-    }
-
-    .findbar-closebutton {
-      padding: 4px !important;
-      background: transparent !important;
-      border: none !important;
-      border-radius: var(--zenux-radius-s) !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      cursor: pointer !important;
-      appearance: none !important;
-      outline: none !important;
-      transition: background-color 0.15s var(--zenux-ease) !important;
-      position: absolute !important;
-      top: 7px !important;
-      right: 0 !important;
 
       &:hover {
-        background-color: var(--zenux-surface-hover) !important;
-      }
-
-      &:active {
-        transform: scale(0.92) !important;
-      }
-    }
-
-    &.ai-expanded {
-      .findbar-container {
-        display: none !important;
-      }
-
-      @media not -moz-pref("extension.browse-bot.findbar-ai.minimal") {
-        .findbar-closebutton {
-          top: 0px !important;
-        }
-
-        .ai-chat-header {
-          margin-right: 34px !important;
-          position: relative !important;
-
-          .findbar-collapse-btn {
-            position: absolute !important;
-            right: 0 !important;
-            top: 50% !important;
-            transform: translateY(-50%);
-          }
-
-          &::before {
-            width: calc(100% + 90px) !important;
-          }
-        }
-      }
-
-      #findbar-expand {
-        display: none;
-      }
-    }
-
-    .findbar-container {
-      display: flex !important;
-      flex-direction: row !important;
-      justify-content: center !important;
-      margin-bottom: 5px !important;
-      flex-wrap: wrap;
-      height: auto !important;
-      row-gap: 10px;
-
-      & > :first-child {
-        width: 100% !important;
-        margin-top: 8px !important;
-        padding-bottom: 10px !important;
-        position: relative;
-        padding-right: 30px !important;
-
-        &::before {
-          width: 18px !important;
-          min-width: 18px !important;
-          content: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23fff" d="M10.5 2c.58 0 1.15.058 1.699.17a1 1 0 1 1-.398 1.96a6.5 6.5 0 1 0 5.069 7.671a1 1 0 1 1 1.96.398a8.5 8.5 0 0 1-1.457 3.303l-.197.26l3.652 3.652a1 1 0 0 1-1.32 1.498l-.094-.084l-3.652-3.652A8.5 8.5 0 1 1 10.5 2M19 1a1 1 0 0 1 .898.56l.048.117l.13.378a3 3 0 0 0 1.684 1.8l.185.07l.378.129a1 1 0 0 1 .118 1.844l-.118.048l-.378.13a3 3 0 0 0-1.8 1.684l-.07.185l-.129.378a1 1 0 0 1-1.844.117l-.048-.117l-.13-.378a3 3 0 0 0-1.684-1.8l-.185-.07l-.378-.129a1 1 0 0 1-.118-1.844l.118-.048l.378-.13a3 3 0 0 0 1.8-1.684l.07-.185l.129-.378A1 1 0 0 1 19 1m0 3.196a5 5 0 0 1-.804.804q.448.355.804.804q.355-.448.804-.804A5 5 0 0 1 19 4.196" /></svg>') !important;
-          background-repeat: no-repeat;
-          margin-top: 6px;
-          margin-right: 15px;
-        }
-
-        .findbar-textbox {
-          background: none !important;
-          padding: 0 !important;
-          font-size: 14px !important;
-          font-weight: 500 !important;
-          box-shadow: none !important;
-          width: 100% !important;
-          border: none !important;
-
-          &:focus {
-            outline: none !important;
-          }
-        }
-
-        toolbarbutton {
-          width: 28px !important;
-          height: 28px !important;
-          justify-content: center !important;
-          align-content: center !important;
-          margin-left: 6px !important;
-          border-radius: 4px !important;
-          font-weight: 600 !important;
-          transition: scale 0.2s ease !important;
-          opacity: 1 !important;
-
-          &[disabled="true"] {
-            display: none !important;
-          }
-
-          label {
-            display: none !important;
-          }
-
-          &:hover {
-            background: var(--tab-hover-background-color) !important;
-          }
-
-          &:active {
-            scale: 0.9 !important;
-          }
-        }
-      }
-
-      checkbox,
-      label,
-      description {
-        margin-left: 8px !important;
-        margin-right: 8px !important;
-      }
-
-      .findbar-label {
-        display: none !important;
-        flex-basis: 100% !important;
-      }
-
-      .found-matches {
-        display: block !important;
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        margin-top: 12px !important;
-        flex-basis: 0 !important;
-        margin: auto !important;
-        padding-right: 12px !important;
-
-        &[hidden="true"] {
-          display: none !important;
-        }
-      }
-
-      .findbar-find-status:is([data-l10n-id]) {
-        display: flex;
-      }
-
-      .checkbox-label {
-        font-size: 12px !important;
-        font-weight: 500 !important;
-      }
-
-      #findbar-ask {
-        margin-right: 5px !important;
-        min-width: 20px !important;
-        font-size: 12px !important;
-        overflow: visible !important;
-      }
-    }
-
-    .browse-bot-setup,
-    .browse-bot-chat {
-      width: 100%;
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .ai-chat-header {
-      height: 30px;
-      display: flex;
-      flex-direction: row;
-      align-items: center !important;
-      gap: 4px !important;
-      padding-left: 8px !important;
-
-      * {
-        z-index: 2 !important;
-      }
-
-      .findbar-drag-handle {
-        position: absolute !important;
-        width: 100% !important;
-        height: 30px !important;
-        cursor: move !important;
-        /* background-color: green !important; */
-        z-index: 1 !important;
-
-        @media not -moz-pref("extension.browse-bot.findbar-ai.dnd-enabled") {
-          display: none !important;
-        }
-      }
-
-      &::before {
-        content: "";
-        position: absolute !important;
-        top: 34px !important;
-        left: 0 !important;
-        width: 100% !important;
-        border-top: 1px solid rgba(127, 127, 127, 0.3) !important;
-      }
-    }
-
-    .browse-bot-setup {
-      .ai-setup-content {
-        text-align: center;
-        padding: 15px !important;
-        padding-top: 30px !important;
-
-        h3 {
-          margin: 9px 0 8px 0 !important;
-          font-size: 22px !important;
-          font-weight: 700 !important;
-        }
-
-        p {
-          margin: 0 0 12px 0 !important;
-          font-size: 15px !important;
-          line-height: 1.4 !important;
-        }
-      }
-
-      .provider-selection-group {
-        padding: 16px 0px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        gap: 8px !important;
-
-        > label {
-          font-size: 15px !important;
-          flex-shrink: 0 !important;
-        }
-
-        #provider-selector {
-          flex: 1 !important;
-          min-width: 0 !important;
-        }
-      }
-
-      .api-key-input-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-
-        .api-input {
-          width: 100%;
-          box-sizing: border-box;
-        }
-
-        .api-key-row {
-          display: flex;
-          gap: 8px;
-          width: 100%;
-        }
-
-        #model-selector-wrap {
-          width: 100%;
-
-          #model-selector {
-            width: 100% !important;
-          }
-        }
-
-        .setup-error {
-          min-height: 18px !important;
-          font-size: 13px !important;
-          color: var(--browse-bot-error, #e5534b) !important;
-
-          &:empty {
-            display: none !important;
-          }
-        }
-
-        input {
-          flex-grow: 1 !important;
-        }
-      }
-
-      .api-key-links {
-        margin-top: 12px;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 8px;
-
-        button {
-          font-size: 14px !important;
-        }
-      }
-    }
-
-    .browse-bot-chat {
-      .ai-chat-messages {
-        max-height: 320px;
-        padding: 10px 2px 14px 2px !important;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        scrollbar-width: thin;
-        scrollbar-color: inherit transparent;
-
-        &:empty {
-          display: none !important;
-
-          & ~ .ai-chat-input-group {
-            padding-top: 4px !important;
-
-            /* When there are no messages, the parent .browse-bot-chat should not have a header or separator line */
-            &::after {
-              display: none;
-            }
-          }
-        }
-      }
-
-      .chat-message {
-        max-width: 85%;
-        padding: 1px 5px;
-        border-radius: 10px;
-        word-wrap: break-word;
-        font-size: 14px;
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        user-select: text;
-      }
-
-      .chat-message-user {
-        align-self: flex-end;
-        background: var(--zenux-accent-soft);
-        border: 1px solid var(--zenux-accent-border);
-        color: var(--zenux-text);
-        border-bottom-right-radius: 4px;
-        padding: 6px 10px !important;
-        font-weight: 500;
-      }
-
-      .chat-message-ai {
-        max-width: calc(100% - 15px) !important;
-        align-self: flex-start;
-
-        .message-content {
-          user-select: text;
-        }
-      }
-
-      .chat-message-error {
-        align-self: flex-start;
-        background: var(--zenux-danger-bg);
         color: var(--zenux-danger);
-      }
-
-      .bb-msg-actions {
-        position: absolute;
-        bottom: -12px;
-        right: 10px;
-        display: flex;
-        gap: 2px;
-        padding: 1px;
-        background: var(--zenux-surface);
-        border: 1px solid var(--zenux-border);
-        border-radius: var(--zenux-radius-pill);
-        box-shadow: var(--zenux-shadow-s);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.15s var(--zenux-ease);
-        z-index: 2;
-
-        .zenux-icon-btn {
-          min-width: 20px !important;
-          min-height: 20px !important;
-          padding: 1px !important;
-
-          img {
-            width: 14px !important;
-            height: 14px !important;
-          }
-        }
-      }
-
-      .chat-message:hover > .bb-msg-actions,
-      .chat-message:focus-within > .bb-msg-actions {
         opacity: 1;
-        pointer-events: auto;
-      }
-
-      .pollinations-key-prompt {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-
-        p {
-          margin: 0 !important;
-        }
-
-        .pollinations-key-row {
-          display: flex;
-          gap: 8px;
-
-          input {
-            flex-grow: 1 !important;
-            min-width: 0 !important;
-          }
-        }
-
-        .key-prompt-status {
-          font-size: 13px !important;
-
-          &:empty {
-            display: none !important;
-          }
-        }
-      }
-
-      .ai-chat-input-group {
-        display: flex;
-        gap: 10px;
-        align-items: center !important;
-        padding-left: 6px !important;
-        padding-right: 6px !important;
-        padding-bottom: 3px !important;
-
-        &:after {
-          content: "";
-          position: absolute !important;
-          bottom: 57px !important;
-
-          @media -moz-pref("extension.browse-bot.findbar-ai.minimal") {
-            bottom: 32px !important;
-          }
-
-          left: 0% !important;
-          width: 100% !important;
-          border-top: 1px solid rgba(127, 127, 127, 0.3) !important;
-        }
-
-        textarea {
-          flex-grow: 1 !important;
-          display: flex !important;
-          align-items: center !important;
-          border-radius: 0 !important;
-          padding: 0 !important;
-          min-height: 20px !important;
-          max-height: 160px !important;
-          height: 50px !important;
-          resize: none !important;
-          border: none !important;
-          background: none !important;
-          /* color: var(--tab-selected-textcolor) !important; */
-          font-size: 14px !important;
-          transition: all 0.2s ease !important;
-          --focus-outline: none !important;
-          --focus-outline-inset: 0 !important;
-
-          /* &::placeholder { */
-          /*   color: var(--toolbox-textcolor-inactive) !important; */
-          /* } */
-        }
-
-        .send-btn,
-        .stop-btn {
-          margin-left: auto !important;
-          padding: 3px !important;
-          align-self: end !important;
-          min-width: 30px !important;
-          min-height: 30px !important;
-          display: flex;
-        }
-      }
-
-      .chat-message-loading {
-        align-self: flex-start;
-        width: auto !important;
-        max-width: 60% !important;
-
-        .message-content {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          color: var(--zenux-muted);
-          font-size: 13px;
-          animation: pulse 1.6s var(--zenux-ease) infinite;
-
-          svg {
-            width: 14px;
-            height: 14px;
-            flex-shrink: 0;
-            animation: spin 0.8s linear infinite;
-          }
-        }
-      }
-    }
-
-    .citation-link {
-      display: inline;
-      padding: 0 0.25em !important;
-      font-size: 0.85em !important;
-      font-weight: 600 !important;
-      line-height: inherit !important;
-      cursor: pointer;
-      margin: 0 1px;
-      vertical-align: baseline;
-      color: var(--zenux-accent-text) !important;
-      background: var(--zenux-accent-soft) !important;
-      border: 1px solid var(--zenux-accent-border) !important;
-      border-radius: 4px !important;
-      text-decoration: none !important;
-      transition: background-color 0.15s var(--zenux-ease);
-
-      &:hover {
-        background: color-mix(in srgb, var(--zenux-accent) 28%, transparent) !important;
-      }
-    }
-
-    #findbar-expand {
-      padding: 4px !important;
-      position: relative;
-      text-align: center;
-      cursor: pointer;
-      transition: background-color 0.15s var(--zenux-ease) !important;
-      border-radius: 4px;
-      font-weight: 600;
-      border: none !important;
-      width: 100% !important;
-
-      &:active {
-        transform: translateY(0);
-      }
-    }
-
-    @media -moz-pref("extension.browse-bot.findbar-ai.minimal") {
-      width: 420px;
-      min-height: 36px !important;
-      align-items: center !important;
-      flex-direction: column !important;
-      overflow: visible !important;
-
-      #findbar-expand {
-        display: none !important;
-      }
-
-      .findbar-closebutton {
-        top: 1px !important;
-      }
-
-      .findbar-container {
-        margin-bottom: 0 !important;
-        margin-inline-start: 0 !important;
-        height: 32px !important;
-        width: 100% !important;
-
-        & > :first-child {
-          border-bottom: 0 !important;
-          width: calc(100% - 35px) !important;
-          padding-right: 3px !important;
-
-          &::before {
-            margin-top: 5px !important;
-            margin-right: 10px;
-            margin-left: -5px;
-          }
-        }
-
-        hbox[anonid="findbar-textbox-wrapper"] {
-          margin: 0 !important;
-          padding: 0 !important;
-        }
-
-        checkbox {
-          display: none !important;
-        }
-      }
-
-      .findbar-closebutton {
-        top: -30px !important;
-        opacity: 0 !important;
-
-        &:hover {
-          opacity: 1 !important;
-        }
-      }
-
-      .ai-chat-header {
-        width: 100% !important;
-        top: -30px !important;
-        position: absolute !important;
-        transition: all 0.2s ease !important;
-
-        &::after {
-          content: "";
-          position: absolute !important;
-          border-radius: var(--zenux-radius-m) !important;
-          opacity: 0 !important;
-          top: 0px !important;
-          width: 140px !important;
-          height: 100% !important;
-          position: absolute !important;
-          right: 10px !important;
-          transition: all 0.2s ease !important;
-          /*border: 1px red solid !important; */
-          background: var(--browse-bot-dialog-bg) !important;
-          backdrop-filter: var(--browse-bot-dialog-backdrop-filter);
-          outline: 1px solid rgba(0, 0, 0, 1) !important;
-
-          @media -moz-pref("extension.browse-bot.findbar-ai.background-style", "pseudo") {
-            background: var(--zenux-bg) !important;
-          }
-
-          border: 1px solid light-dark(rgba(20, 20, 20, 0.2), rgba(235, 235, 235, 0.3)) !important;
-          padding-bottom: 4px !important;
-          margin-bottom: -2px !important;
-          clip-path: inset(0 0 15% 0);
-        }
-
-        &::before {
-          display: none !important;
-        }
-
-        .findbar-drag-handle {
-          width: 20px !important;
-          opacity: 0 !important;
-          background: var(--browse-bot-dialog-bg) !important;
-          backdrop-filter: var(--browse-bot-dialog-backdrop-filter);
-          outline: 1px solid rgba(0, 0, 0, 1) !important;
-
-          @media -moz-pref("extension.browse-bot.findbar-ai.background-style", "pseudo") {
-            background: var(--zenux-bg) !important;
-          }
-
-          border: 1px solid light-dark(rgba(20, 20, 20, 0.2), rgba(235, 235, 235, 0.3)) !important;
-          border-bottom: none !important;
-          padding-bottom: 4px !important;
-          margin-bottom: -2px !important;
-          clip-path: inset(0 0 15% 0);
-          border-radius: 4px !important;
-          display: flex !important;
-          justify-content: center !important;
-          align-content: center !important;
-          position: relative !important;
-
-          &::after {
-            content: url("chrome://browser/skin/zen-icons/drag-indicator.svg") !important;
-            -moz-context-properties: fill !important;
-            fill: light-dark(black, white) !important;
-            padding-top: 6px !important;
-          }
-
-          @media not -moz-pref("extension.browse-bot.findbar-ai.dnd-enabled") {
-            display: none !important;
-          }
-        }
-
-        .clear-chat-btn,
-        .settings-btn,
-        .findbar-collapse-btn {
-          position: absolute !important;
-          z-index: 2 !important;
-          opacity: 0 !important;
-        }
-
-        .findbar-collapse-btn {
-          right: 50px !important;
-        }
-
-        .clear-chat-btn {
-          right: 84px !important;
-        }
-
-        .settings-btn {
-          right: 116px !important;
-        }
-      }
-
-      &:has(.findbar-closebutton:hover),
-      &:has(.findbar-drag-handle:active),
-      &:has(.ai-chat-header:hover) {
-        .clear-chat-btn,
-        .settings-btn,
-        .findbar-collapse-btn,
-        .findbar-closebutton,
-        .findbar-drag-handle,
-        .ai-chat-header::after {
-          opacity: 1 !important;
-        }
-      }
-
-      &:not(.ai-expanded) {
-        .ai-chat-header {
-          display: none !important;
-        }
-
-        /* Collapsed minimal is a single row: hide the whole chat UI,
-         * otherwise the prompt input renders as a second row. */
-        .browse-bot-chat,
-        .browse-bot-setup {
-          display: none !important;
-        }
-
-        .findbar-closebutton {
-          display: inline-flex !important;
-          top: 1px !important;
-          opacity: 1 !important;
-        }
-
-        .findbar-container {
-          padding: 0 35px 0 10px !important;
-          flex-wrap: nowrap !important;
-          align-items: center !important;
-
-          & > :first-child {
-            width: auto !important;
-            flex: 1 1 auto !important;
-            min-width: 0 !important;
-          }
-        }
-
-        #findbar-ask {
-          flex-shrink: 0 !important;
-          align-self: center !important;
-          font-size: 11px !important;
-          padding: 2px 10px !important;
-          margin: 0 0 0 8px !important;
-          min-width: 0 !important;
-        }
-      }
-
-      &.ai-expanded {
-        .ai-chat-input-group {
-          padding-left: 3px !important;
-
-          &::before {
-            width: 18px !important;
-            min-width: 18px !important;
-            content: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="%23fff" d="M9.107 5.448c.598-1.75 3.016-1.803 3.725-.159l.06.16l.807 2.36a4 4 0 0 0 2.276 2.411l.217.081l2.36.806c1.75.598 1.803 3.016.16 3.725l-.16.06l-2.36.807a4 4 0 0 0-2.412 2.276l-.081.216l-.806 2.361c-.598 1.75-3.016 1.803-3.724.16l-.062-.16l-.806-2.36a4 4 0 0 0-2.276-2.412l-.216-.081l-2.36-.806c-1.751-.598-1.804-3.016-.16-3.724l.16-.062l2.36-.806A4 4 0 0 0 8.22 8.025l.081-.216zM11 6.094l-.806 2.36a6 6 0 0 1-3.49 3.649l-.25.091l-2.36.806l2.36.806a6 6 0 0 1 3.649 3.49l.091.25l.806 2.36l.806-2.36a6 6 0 0 1 3.49-3.649l.25-.09l2.36-.807l-2.36-.806a6 6 0 0 1-3.649-3.49l-.09-.25zM19 2a1 1 0 0 1 .898.56l.048.117l.35 1.026l1.027.35a1 1 0 0 1 .118 1.845l-.118.048l-1.026.35l-.35 1.027a1 1 0 0 1-1.845.117l-.048-.117l-.35-1.026l-1.027-.35a1 1 0 0 1-.118-1.845l.118-.048l1.026-.35l.35-1.027A1 1 0 0 1 19 2" /></svg>') !important;
-            margin-left: 5px;
-          }
-
-          textarea {
-            height: 20px !important;
-            position: relative !important;
-          }
-
-          .send-btn,
-          .stop-btn {
-            padding: 1px !important;
-            min-width: 24px !important;
-            min-height: 24px !important;
-          }
-        }
       }
     }
   }
+
+  .bb-popup-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: var(--zenux-radius-s);
+    cursor: pointer;
+    min-width: 0;
+
+    &.is-active,
+    &:hover {
+      background: var(--zenux-surface-hover);
+    }
+
+    .bb-popup-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .bb-popup-title {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 1;
+      min-width: 0;
+    }
+
+    .bb-popup-desc {
+      font-size: 12px;
+      color: var(--zenux-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-left: auto;
+      padding-left: 8px;
+      flex-shrink: 10;
+      min-width: 0;
+    }
+  }
+
+  .bb-tool-run {
+    border: 1px solid var(--zenux-border);
+    border-radius: var(--zenux-radius-m);
+    background: var(--zenux-surface);
+    overflow: hidden;
+
+    .bb-tool-run-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      box-sizing: border-box;
+      padding: 6px 10px;
+      cursor: pointer;
+      list-style: none;
+
+      &::marker,
+      &::-webkit-details-marker {
+        display: none;
+      }
+
+      &:hover {
+        background: var(--zenux-surface-hover);
+      }
+
+      .bb-tool-run-status {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        image,
+        svg {
+          width: 14px;
+          height: 14px;
+          display: block;
+        }
+
+        image {
+          -moz-context-properties: fill;
+        }
+      }
+
+      .bb-tool-run-title {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--zenux-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .bb-tool-run-chevron {
+        width: 14px;
+        height: 14px;
+        margin-left: auto;
+        flex-shrink: 0;
+        -moz-context-properties: fill;
+        fill: var(--zenux-muted);
+        transition: transform 0.18s var(--zenux-ease);
+      }
+    }
+
+    &[data-state="working"] .bb-tool-run-status {
+      animation: spin 0.7s linear infinite;
+    }
+
+    &[data-state="working"] .bb-tool-run-status image {
+      fill: var(--zenux-muted);
+    }
+
+    &[data-state="done"] .bb-tool-run-status image {
+      fill: var(--zenux-success);
+    }
+
+    .bb-tool-run-rows {
+      display: flex;
+      flex-direction: column;
+      padding-left: 12px;
+    }
+
+    .bb-tool-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border-top: 1px solid var(--zenux-border);
+      font-size: 12.5px;
+      color: var(--zenux-muted);
+
+      &:hover {
+        background: var(--zenux-surface-hover);
+      }
+
+      .bb-tool-row-icon {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        image,
+        svg {
+          width: 14px;
+          height: 14px;
+          display: block;
+        }
+
+        image {
+          -moz-context-properties: fill;
+        }
+      }
+
+      &[data-status="loading"] .bb-tool-row-icon {
+        animation: spin 0.7s linear infinite;
+      }
+
+      &[data-status="loading"] .bb-tool-row-icon image {
+        fill: var(--zenux-muted);
+      }
+
+      &[data-status="success"] .bb-tool-row-icon image {
+        fill: var(--zenux-success);
+      }
+
+      &[data-status="error"] .bb-tool-row-icon image {
+        fill: var(--zenux-danger);
+      }
+
+      &[data-status="declined"] .bb-tool-row-icon image {
+        fill: var(--zenux-warning);
+      }
+
+      .bb-tool-row-label {
+        flex: 1;
+        min-width: 0;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+      }
+
+      .bb-tool-row-time {
+        font-size: 11px;
+        opacity: 0.6;
+        flex-shrink: 0;
+      }
+    }
+
+    .bb-tool-row-detail {
+      margin: 0 10px 8px;
+      padding: 6px 8px;
+      border-radius: var(--zenux-radius-s);
+      background: var(--zenux-bg);
+      border: 1px solid var(--zenux-border);
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--zenux-muted);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 120px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
+
+  /* Inline approval card: overrides the fixed modal from settings.css and the
+   * modal content box from library.css, mirroring the Library's inline card. */
+  .tool-confirmation-dialog {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    display: block !important;
+    z-index: auto !important;
+    align-self: stretch !important;
+  }
+
+  .tool-confirmation-content {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    padding: 12px !important;
+    text-align: left !important;
+    background: var(--zenux-surface) !important;
+    border: 1px solid var(--zenux-accent-border) !important;
+    outline: none !important;
+    backdrop-filter: none !important;
+    border-radius: var(--zenux-radius-m) !important;
+
+    .tool-confirm-title {
+      margin: 0 0 10px !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+
+      .right-side-buttons {
+        display: flex;
+        gap: 8px;
+        margin-left: auto;
+      }
+    }
+
+    .not-again {
+      font-size: 12px;
+    }
+  }
+}
+
+/* --- Chat messages (moved verbatim under the panel root) ------------------- */
+
+#browse-bot-panel .chat-message {
+  max-width: 85%;
+  padding: 1px 5px;
+  border-radius: 10px;
+  word-wrap: break-word;
+  font-size: 14px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  user-select: text;
+}
+
+#browse-bot-panel .chat-message-user {
+  align-self: flex-end;
+  background: var(--zenux-accent-soft);
+  border: 1px solid var(--zenux-accent-border);
+  color: var(--zenux-text);
+  border-bottom-right-radius: 4px;
+  padding: 6px 10px !important;
+  font-weight: 500;
+}
+
+#browse-bot-panel .chat-message-ai {
+  max-width: calc(100% - 15px) !important;
+  align-self: flex-start;
+}
+
+#browse-bot-panel .chat-message-ai .message-content {
+  user-select: text;
+}
+
+#browse-bot-panel .chat-message-error {
+  align-self: flex-start;
+  background: var(--zenux-danger-bg);
+  color: var(--zenux-danger);
+}
+
+#browse-bot-panel .bb-msg-actions {
+  position: absolute;
+  bottom: -12px;
+  right: 10px;
+  display: flex;
+  gap: 2px;
+  padding: 1px;
+  background: var(--zenux-surface);
+  border: 1px solid var(--zenux-border);
+  border-radius: var(--zenux-radius-pill);
+  box-shadow: var(--zenux-shadow-s);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s var(--zenux-ease);
+  z-index: 2;
+}
+
+#browse-bot-panel .bb-msg-actions .zenux-icon-btn {
+  min-width: 20px !important;
+  min-height: 20px !important;
+  padding: 1px !important;
+}
+
+#browse-bot-panel .bb-msg-actions .zenux-icon-btn img {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+#browse-bot-panel .chat-message:hover > .bb-msg-actions,
+#browse-bot-panel .chat-message:focus-within > .bb-msg-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#browse-bot-panel .pollinations-key-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#browse-bot-panel .pollinations-key-prompt p {
+  margin: 0 !important;
+}
+
+#browse-bot-panel .pollinations-key-prompt .pollinations-key-row {
+  display: flex;
+  gap: 8px;
+}
+
+#browse-bot-panel .pollinations-key-prompt .pollinations-key-row input {
+  flex-grow: 1 !important;
+  min-width: 0 !important;
+}
+
+#browse-bot-panel .pollinations-key-prompt .key-prompt-status {
+  font-size: 13px !important;
+}
+
+#browse-bot-panel .pollinations-key-prompt .key-prompt-status:empty {
+  display: none !important;
+}
+
+#browse-bot-panel .chat-message-loading {
+  align-self: flex-start;
+  width: auto !important;
+  max-width: 60% !important;
+}
+
+#browse-bot-panel .chat-message-loading .message-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--zenux-muted);
+  font-size: 13px;
+  animation: pulse 1.6s var(--zenux-ease) infinite;
+}
+
+#browse-bot-panel .chat-message-loading .message-content svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  animation: spin 0.8s linear infinite;
+}
+
+#browse-bot-panel .citation-link {
+  display: inline;
+  padding: 0 0.25em !important;
+  font-size: 0.85em !important;
+  font-weight: 600 !important;
+  line-height: inherit !important;
+  cursor: pointer;
+  margin: 0 1px;
+  vertical-align: baseline;
+  color: var(--zenux-accent-text) !important;
+  background: var(--zenux-accent-soft) !important;
+  border: 1px solid var(--zenux-accent-border) !important;
+  border-radius: 4px !important;
+  text-decoration: none !important;
+  transition: background-color 0.15s var(--zenux-ease);
+}
+
+#browse-bot-panel .citation-link:hover {
+  background: color-mix(in srgb, var(--zenux-accent) 28%, transparent) !important;
+}
+
+/* --- Native findbar: Ask AI button only ------------------------------------
+ * No native findbar geometry, positioning, match-element moves, or display
+ * overrides. The button inherits .zenux-btn-primary; this only seats it in the
+ * native container. The find-field placeholder hint is set in JS. */
+
+#findbar-ask {
+  margin-inline-start: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
 }

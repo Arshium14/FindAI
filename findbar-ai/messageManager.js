@@ -1,11 +1,88 @@
 import { PREFS } from "./utils/prefs.js";
 
-async function frameScript() {
+export function pageInteractionLabelFor(element) {
+  const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+  const ariaLabel = clean(element.getAttribute("aria-label"));
+  if (ariaLabel) return ariaLabel;
+  const associated = clean(
+    Array.from(element.labels || [])
+      .map((label) => {
+        const clone = label.cloneNode(true);
+        clone.querySelectorAll("input, textarea, select, [contenteditable]").forEach((editable) => {
+          editable.remove();
+        });
+        return clone.textContent;
+      })
+      .join(" ")
+  );
+  if (associated) return associated;
+  const tag = String(element.tagName || "").toLowerCase();
+  const editable = element.isContentEditable || ["input", "textarea", "select"].includes(tag);
+  const text = editable ? "" : clean(element.textContent);
+  if (text) return text;
+  const name = clean(element.getAttribute("name"));
+  if (name) return name;
+  return clean(element.getAttribute("placeholder"));
+}
+
+export function pageInteractionIsEnabled(element) {
+  return !element.matches(":disabled") && element.getAttribute("aria-disabled") !== "true";
+}
+
+export function dispatchPageKey(content, target, key, { form, submit, deleteBackward, moveFocus }) {
+  target.focus();
+  const eventInit = { key, code: key, bubbles: true, cancelable: true };
+  const keydown = new content.KeyboardEvent("keydown", eventInit);
+  let cancelled = !target.dispatchEvent(keydown);
+  if (!cancelled && key === "Enter") {
+    const keypress = new content.KeyboardEvent("keypress", eventInit);
+    cancelled = !target.dispatchEvent(keypress);
+  }
+
+  let deleted = false;
+  let submitted = false;
+  let focusMoved = false;
+  if (!cancelled && key === "Backspace") {
+    const deletion = deleteBackward(target);
+    cancelled = deletion.cancelled;
+    deleted = deletion.deleted;
+  }
+  if (!cancelled && key === "Tab") focusMoved = moveFocus(target, keydown.shiftKey);
+  if (!cancelled && key === "Enter" && submit === true) {
+    form.requestSubmit();
+    submitted = true;
+  }
+
+  const keyupTarget = focusMoved ? content.document.activeElement || target : target;
+  const keyup = new content.KeyboardEvent("keyup", eventInit);
+  keyupTarget.dispatchEvent(keyup);
+  return { key, cancelled, deleted, focusMoved, submitted };
+}
+
+async function frameScript({ labelFor, isEnabled, dispatchKey }) {
   const getUrlAndTitle = () => {
     return {
       url: content.location.href,
       title: content.document.title,
     };
+  };
+
+  const extractSearchResults = () => {
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    return Array.from(
+      content.document.querySelectorAll("a:has(h3), .b_algo h2 a, .result__a"),
+      (anchor) => {
+        const container = anchor.closest("li.b_algo, .result, .g, .MjjYud, article");
+        const snippet = container?.querySelector(
+          ".b_caption p, .result__snippet, .VwiC3b, [data-sncf]"
+        );
+        return {
+          title: clean(anchor.querySelector("h3, h2")?.textContent || anchor.textContent),
+          url: anchor.href || anchor.getAttribute("href") || "",
+          snippet: clean(snippet?.textContent || container?.textContent),
+        };
+      }
+    );
   };
 
   const extractRelevantContent = () => {
@@ -170,6 +247,156 @@ async function frameScript() {
     );
   };
 
+  const interactiveSelector =
+    'a[href], button, input, textarea, select, [role="button"], [contenteditable="true"]';
+
+  const isVisible = (element) => {
+    if (!element?.isConnected || element.getClientRects().length === 0) return false;
+    const style = content.getComputedStyle(element);
+    return style.visibility !== "hidden" && style.display !== "none";
+  };
+
+  const requiredElement = (selector) => {
+    const element = content.document.querySelector(selector);
+    if (!element) throw new Error(`Element with selector "${selector}" not found.`);
+    return element;
+  };
+
+  const validateActionElement = (element) => {
+    if (!isVisible(element)) throw new Error("The target element is not visible.");
+    if (!isEnabled(element)) throw new Error("The target element is disabled.");
+  };
+
+  const uniqueIdSelector = (element) => {
+    if (!element?.id) return null;
+    const selector = `#${content.CSS.escape(element.id)}`;
+    return content.document.querySelectorAll(selector).length === 1 ? selector : null;
+  };
+
+  const nthOfType = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const parent = element.parentElement;
+    if (!parent) return tag;
+    const siblings = Array.from(parent.children).filter((child) => child.tagName === element.tagName);
+    return `${tag}:nth-of-type(${siblings.indexOf(element) + 1})`;
+  };
+
+  const selectorFor = (element) => {
+    const direct = uniqueIdSelector(element);
+    if (direct) return direct;
+
+    let ancestor = element.parentElement;
+    let ancestorSelector = null;
+    while (ancestor) {
+      ancestorSelector = uniqueIdSelector(ancestor);
+      if (ancestorSelector) break;
+      ancestor = ancestor.parentElement;
+    }
+
+    const parts = [];
+    let current = element;
+    while (current && current !== ancestor) {
+      parts.unshift(nthOfType(current));
+      current = current.parentElement;
+    }
+    const selector = `${ancestorSelector ? `${ancestorSelector} > ` : ""}${parts.join(" > ")}`;
+    if (content.document.querySelectorAll(selector).length === 1) return selector;
+    throw new Error("Could not generate a unique selector for an interactive element.");
+  };
+
+  const inspectionEntry = (element) => ({
+    selector: selectorFor(element),
+    tag: element.tagName.toLowerCase(),
+    type: String(element.type || ""),
+    label: labelFor(element).slice(0, 200),
+    contentEditable: element.isContentEditable === true,
+  });
+
+  const visibleInteractiveElements = (root = content.document) =>
+    Array.from(root.querySelectorAll(interactiveSelector)).filter(
+      (element) => isVisible(element) && isEnabled(element)
+    );
+
+  const nativeValueAccess = (element, isTextArea) => {
+    const prototype = isTextArea
+      ? content.HTMLTextAreaElement.prototype
+      : content.HTMLInputElement.prototype;
+    const direct = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+    if (direct) return { setter: direct, target: element };
+
+    const wrapped = element.wrappedJSObject;
+    let wrappedPrototype = wrapped ? Object.getPrototypeOf(wrapped) : null;
+    while (wrappedPrototype) {
+      const setter = Object.getOwnPropertyDescriptor(wrappedPrototype, "value")?.set;
+      if (setter) return { setter, target: wrapped };
+      wrappedPrototype = Object.getPrototypeOf(wrappedPrototype);
+    }
+    throw new Error("Native input value setter is unavailable.");
+  };
+
+  const setNativeValue = (element, value, isTextArea) => {
+    const { setter, target } = nativeValueAccess(element, isTextArea);
+    setter.call(target, value);
+  };
+
+  const supportsBackwardDeletion = (element) => {
+    if (!isEnabled(element) || element.readOnly) return false;
+    if (element.isContentEditable || element instanceof content.HTMLTextAreaElement) return true;
+    if (!(element instanceof content.HTMLInputElement)) return false;
+    return !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(
+      String(element.type || "").toLowerCase()
+    );
+  };
+
+  const deleteBackward = (element) => {
+    if (!supportsBackwardDeletion(element)) return { cancelled: false, deleted: false };
+    const before = new content.InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      data: null,
+      inputType: "deleteContentBackward",
+    });
+    if (!element.dispatchEvent(before)) return { cancelled: true, deleted: false };
+
+    if (element.isContentEditable) {
+      const deleted = content.document.execCommand("delete", false);
+      return { cancelled: false, deleted };
+    }
+
+    const isTextArea = element instanceof content.HTMLTextAreaElement;
+    const value = String(element.value);
+    let start;
+    let end;
+    try {
+      start = element.selectionStart;
+      end = element.selectionEnd;
+    } catch {}
+    if (typeof start !== "number" || typeof end !== "number") {
+      start = value.length;
+      end = value.length;
+    }
+    const deleteStart = start === end ? Math.max(0, start - 1) : start;
+    if (deleteStart === end) return { cancelled: false, deleted: false };
+    setNativeValue(element, `${value.slice(0, deleteStart)}${value.slice(end)}`, isTextArea);
+    try {
+      element.setSelectionRange(deleteStart, deleteStart);
+    } catch {}
+    element.dispatchEvent(new content.Event("input", { bubbles: true }));
+    return { cancelled: false, deleted: true };
+  };
+
+  const moveFocus = (target, backwards) => {
+    const elements = visibleInteractiveElements();
+    if (!elements.length) return false;
+    const index = elements.indexOf(target);
+    const delta = backwards ? -1 : 1;
+    const nextIndex = index < 0 ? (backwards ? elements.length - 1 : 0) : (index + delta + elements.length) % elements.length;
+    const next = elements[nextIndex];
+    if (!next || next === target) return false;
+    next.focus();
+    return content.document.activeElement === next;
+  };
+
   const handlers = {
     GetPageHTMLContent: () => {
       return {
@@ -195,13 +422,117 @@ async function frameScript() {
       };
     },
 
-    ClickElement: ({ selector }) => {
-      const element = content.document.querySelector(selector);
-      if (!element) {
-        throw new Error(`Element with selector "${selector}" not found.`);
+    ExtractSearchResults: () => extractSearchResults(),
+
+    InspectInteractiveElements: ({ selector }) => {
+      let root = content.document;
+      if (selector) {
+        root = requiredElement(selector);
       }
-      element.click();
-      return { result: `Clicked element with selector "${selector}".` };
+      const candidates = [];
+      if (root !== content.document && root.matches(interactiveSelector)) candidates.push(root);
+      candidates.push(...root.querySelectorAll(interactiveSelector));
+      const elements = [];
+      for (const element of candidates) {
+        if (elements.length >= 50) break;
+        if (isVisible(element) && isEnabled(element)) elements.push(inspectionEntry(element));
+      }
+      return { elements };
+    },
+
+    ClickElement: ({ selector, submit }) => {
+      const element = requiredElement(selector);
+      validateActionElement(element);
+      const tag = element.tagName.toLowerCase();
+      const type = String(element.type || "").toLowerCase();
+      const isSubmitControl =
+        (tag === "button" && type === "submit") ||
+        (tag === "input" && ["submit", "image"].includes(type));
+      if (isSubmitControl && submit !== true) {
+        throw new Error("Clicking this submit control requires explicit submit=true.");
+      }
+
+      let submissionBlocked = false;
+      const preventSubmission = (event) => {
+        submissionBlocked = true;
+        event.preventDefault();
+      };
+      if (submit !== true) content.document.addEventListener("submit", preventSubmission, true);
+      try {
+        element.click();
+      } finally {
+        if (submit !== true) {
+          content.document.removeEventListener("submit", preventSubmission, true);
+        }
+      }
+      return {
+        tag,
+        type,
+        submitted: isSubmitControl && submit === true,
+        submissionBlocked,
+      };
+    },
+
+    TypeText: ({ selector, text, clear }) => {
+      const element = requiredElement(selector);
+      element.focus();
+      const isInput = element instanceof content.HTMLInputElement;
+      const isTextArea = element instanceof content.HTMLTextAreaElement;
+      const isEditable = element.isContentEditable;
+      if (!isInput && !isTextArea && !isEditable) {
+        throw new Error("typeText requires an input, textarea, or contenteditable element.");
+      }
+      validateActionElement(element);
+      if (element.readOnly) throw new Error("The target element is read-only.");
+      const value = String(text);
+      const before = new content.InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        data: value,
+        inputType: clear ? "insertReplacementText" : "insertText",
+      });
+      if (!element.dispatchEvent(before)) return { cancelled: true, length: 0 };
+      if (isEditable) {
+        const selection = content.getSelection();
+        const range = content.document.createRange();
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        if (clear) content.document.execCommand("delete", false);
+        selection.collapseToEnd();
+        if (!content.document.execCommand("insertText", false, value)) {
+          throw new Error("The page did not allow text insertion.");
+        }
+      } else {
+        setNativeValue(element, clear ? value : `${element.value}${value}`, isTextArea);
+        element.dispatchEvent(new content.Event("input", { bubbles: true }));
+      }
+      element.dispatchEvent(new content.Event("change", { bubbles: true }));
+      return { cancelled: false, length: value.length };
+    },
+
+    PressKey: ({ selector, key, submit }) => {
+      if (!["Enter", "Tab", "Escape", "Backspace"].includes(key)) {
+        throw new Error("Unsupported key. Use Enter, Tab, Escape, or Backspace.");
+      }
+      const target = selector
+        ? requiredElement(selector)
+        : content.document.activeElement || content.document.body || content.document.documentElement;
+      if (!target) throw new Error("No page element is available to receive the key press.");
+      if (selector) validateActionElement(target);
+      const form = key === "Enter" && submit === true ? target.form || target.closest?.("form") : null;
+      if (key === "Enter" && submit === true) {
+        if (!form || typeof form.requestSubmit !== "function") {
+          throw new Error("Enter submission requires an element associated with a submittable form.");
+        }
+      }
+
+      return dispatchKey(content, target, key, {
+        form,
+        submit,
+        deleteBackward,
+        moveFocus,
+      });
     },
 
     FillForm: ({ selector, value }) => {
@@ -220,9 +551,7 @@ async function frameScript() {
       element.value = value;
       element.dispatchEvent(new Event("input", { bubbles: true }));
       element.dispatchEvent(new Event("change", { bubbles: true }));
-      return {
-        result: `Filled element with selector "${selector}" with value "${value}".`,
-      };
+      return { result: "Filled the target element.", length: String(value).length };
     },
 
     SeekVideo: ({ seconds }) => {
@@ -263,7 +592,11 @@ async function frameScript() {
   });
 }
 
-const frameScriptText = `(${frameScript})();`;
+const frameScriptText = `(${frameScript})({
+  labelFor: ${pageInteractionLabelFor},
+  isEnabled: ${pageInteractionIsEnabled},
+  dispatchKey: ${dispatchPageKey},
+});`;
 const frameScriptURL =
   "data:application/javascript;charset=utf-8," + encodeURIComponent(frameScriptText);
 
@@ -361,11 +694,11 @@ export const messageManagerAPI = {
     return sendToBrowser(gBrowser.selectedBrowser, cmd, data, opts);
   },
 
-  async getPageTextContentForTab(tab, trimWhiteSpace = true) {
+  async getPageTextContentForTab(tab, trimWhiteSpace = true, opts) {
     const browser = tab?.linkedBrowser;
     if (!browser?.messageManager) return null;
     try {
-      const result = await sendToBrowser(browser, "GetPageTextContent", { trimWhiteSpace });
+      const result = await sendToBrowser(browser, "GetPageTextContent", { trimWhiteSpace }, opts);
       return {
         textContent: result?.textContent || "",
         url: result?.url || browser.currentURI?.spec || "",
@@ -375,6 +708,14 @@ export const messageManagerAPI = {
       PREFS.debugError("Failed to get page text content for tab:", error);
       return null;
     }
+  },
+
+  async extractSearchResultsForTab(tab, opts) {
+    const browser = tab?.linkedBrowser;
+    if (!browser?.messageManager || tab.closing || !tab.isConnected) {
+      return { error: "Search tab is closed or no longer connected." };
+    }
+    return sendToBrowser(browser, "ExtractSearchResults", {}, opts);
   },
 
   getUrlAndTitle() {
@@ -414,6 +755,31 @@ export const messageManagerAPI = {
       PREFS.debugError("Failed to get page text content:", error);
       return this.getUrlAndTitle();
     });
+  },
+
+  async inspectPageForTab(browser, selector, opts) {
+    if (!browser?.messageManager) throw new Error("The page tab is closed or no longer connected.");
+    return sendToBrowser(browser, "InspectInteractiveElements", { selector }, opts);
+  },
+
+  async clickElementForTab(browser, selector, submit = false, opts) {
+    if (!browser?.messageManager) throw new Error("The page tab is closed or no longer connected.");
+    return sendToBrowser(browser, "ClickElement", { selector, submit: submit === true }, opts);
+  },
+
+  async typeTextForTab(browser, selector, text, clear = false, opts) {
+    if (!browser?.messageManager) throw new Error("The page tab is closed or no longer connected.");
+    return sendToBrowser(browser, "TypeText", { selector, text, clear: clear === true }, opts);
+  },
+
+  async pressKeyForTab(browser, key, selector, submit = false, opts) {
+    if (!browser?.messageManager) throw new Error("The page tab is closed or no longer connected.");
+    return sendToBrowser(
+      browser,
+      "PressKey",
+      { key, selector, submit: key === "Enter" && submit === true },
+      opts
+    );
   },
 
   async clickElement(selector, ...rest) {

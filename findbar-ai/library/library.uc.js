@@ -1,6 +1,12 @@
 import { PREFS } from "../utils/prefs.js";
 import { browseBotLibraryLLM, MODES } from "./library-llm.js";
-import { messageManagerAPI } from "../messageManager.js";
+import {
+  TabReferenceController,
+  insertReferenceChips,
+  tokenBeforeCaret as tabTokenBeforeCaret,
+} from "../agent/tab-references.js";
+import { ToolActivity } from "../agent/tool-activity.js";
+import { agentCapabilityError } from "../agent/controller.js";
 import { parseElement, escapeXmlAttribute, xulImage } from "../../utils/parse.js";
 import { icons } from "../../utils/icon.js";
 import { parseMD } from "../utils/markdown.js";
@@ -93,23 +99,6 @@ function getActiveSession() {
     activeSavedLength = 0;
   }
   return activeSession;
-}
-
-function listTabs() {
-  try {
-    const tabs = gZenWorkspaces?.allStoredTabs || gBrowser?.tabs || [];
-    return tabs
-      .filter((tab) => tab && !tab.hidden && !tab.closing && !tab.hasAttribute("pending"))
-      .map((tab) => ({
-        tab,
-        title: tab.label || tab.linkedBrowser?.currentURI?.spec || "Untitled",
-        url: tab.linkedBrowser?.currentURI?.spec || "",
-        icon: tab.image || "",
-      }))
-      .filter((t) => t.url && t.url !== "about:newtab" && t.url !== "about:blank");
-  } catch {
-    return [];
-  }
 }
 
 function getLitHtml() {
@@ -339,30 +328,6 @@ function toolVerb(toolName, status, args) {
   return target ? `${base} · ${target}` : base;
 }
 
-function toolArgsPreview(args) {
-  if (!args || typeof args !== "object") return "";
-  try {
-    const text = JSON.stringify(args);
-    if (typeof args.css === "string" || typeof args.code === "string") return text;
-    return text.length > 300 ? `${text.slice(0, 300)}…` : text;
-  } catch {
-    return "";
-  }
-}
-
-function snapshotToolResult(result, limit = 1500) {
-  if (result === null || result === undefined) return "";
-  let text = "";
-  try {
-    text = typeof result === "string" ? result : JSON.stringify(result);
-  } catch {
-    return "";
-  }
-  if (text.length > limit)
-    return `${text.slice(0, limit)}… [truncated ${text.length - limit} chars]`;
-  return text;
-}
-
 function broadcastRunEnd(except) {
   for (const fn of [...libraryRunEndListeners]) {
     if (fn === except) continue;
@@ -405,7 +370,6 @@ function mountPanel(host) {
 
   const state = {
     host,
-    pendingRefs: [],
     abortController: null,
     streaming: false,
     popupIndex: 0,
@@ -414,6 +378,7 @@ function mountPanel(host) {
     popupToken: null,
     destroyed: false,
   };
+  const tabReferences = new TabReferenceController();
   let fullSessionList = [];
   host._bbCleanup = () => {
     state.destroyed = true;
@@ -658,6 +623,7 @@ function mountPanel(host) {
 
   function clearInput() {
     input.value = "";
+    tabReferences.text = input.value;
     input.style.height = "";
   }
 
@@ -754,7 +720,7 @@ function mountPanel(host) {
     const contentDiv = parseElement(`<div class="message-content"></div>`);
     contentDiv.appendChild(parseMD(content || ""));
     wrap.appendChild(contentDiv);
-    insertRefChips(contentDiv, refs);
+    insertReferenceChips(contentDiv, refs);
     attachMessageActions(wrap, { onRegenerate: handleRegenerate });
     messagesEl.appendChild(wrap);
     scrollDown();
@@ -821,64 +787,6 @@ function mountPanel(host) {
     deleteBtn.hidden = browseBotLibraryLLM.getHistory().length === 0;
     input.value = prompt;
     handleSend();
-  }
-
-  function insertRefChips(contentDiv, refs) {
-    if (!refs || refs.length === 0) return;
-    const sorted = [...refs].sort((a, b) => b.title.length - a.title.length);
-    const walker = document.createTreeWalker(contentDiv, NodeFilter.SHOW_TEXT);
-    const textNodes = [];
-    while (walker.nextNode()) textNodes.push(walker.currentNode);
-    for (const startNode of textNodes) {
-      if (startNode.parentElement?.closest?.("pre, code")) continue;
-      let node = startNode;
-      for (;;) {
-        let best = null;
-        for (const ref of sorted) {
-          const token = `@${ref.title}`;
-          const idx = node.textContent.indexOf(token);
-          if (idx !== -1 && (!best || idx < best.idx)) best = { ref, idx, token };
-        }
-        if (!best) break;
-        const parent = node.parentNode;
-        if (!parent) break;
-        parent.insertBefore(document.createTextNode(node.textContent.slice(0, best.idx)), node);
-        parent.insertBefore(refChip(best.ref, false), node);
-        const after = document.createTextNode(node.textContent.slice(best.idx + best.token.length));
-        parent.replaceChild(after, node);
-        node = after;
-      }
-    }
-  }
-
-  function refChip(ref, removable) {
-    const chip = parseElement(
-      `<span class="bb-ref-chip">${ref.icon ? `<img src="${escapeXmlAttribute(ref.icon)}" />` : ""}<span>${escapeXmlAttribute(ref.title)}</span>${removable ? `<span class="bb-ref-remove"><img src="chrome://global/skin/icons/close.svg" /></span>` : ""}</span>`
-    );
-    for (const img of chip.querySelectorAll("img")) {
-      img.addEventListener("error", () => img.remove());
-    }
-    if (removable) {
-      chip.querySelector(".bb-ref-remove")?.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        state.pendingRefs = state.pendingRefs.filter((r) => r.tab !== ref.tab);
-        input.value = input.value.split(`@${ref.title}`).join("").replace(/ {2,}/g, " ");
-        renderChips();
-        input.focus();
-      });
-    }
-    return chip;
-  }
-
-  function renderChips() {
-    refsBar.replaceChildren();
-    for (const ref of state.pendingRefs) refsBar.appendChild(refChip(ref, true));
-  }
-
-  function syncPendingRefs() {
-    const before = state.pendingRefs.length;
-    state.pendingRefs = state.pendingRefs.filter((r) => input.value.includes(`@${r.title}`));
-    if (state.pendingRefs.length !== before) renderChips();
   }
 
   function appendToolRunBox(run) {
@@ -1019,8 +927,11 @@ function mountPanel(host) {
     browseBotLibraryLLM.clearData();
     activeSession = newSession(PREFS.libraryMode);
     activeSavedLength = 0;
-    state.pendingRefs = [];
-    renderChips();
+    tabReferences.clear();
+    tabReferences.renderChips(refsBar, (nextText) => {
+      input.value = nextText;
+      input.focus();
+    });
     renderHistory();
     if (oldId)
       deleteSession(oldId).catch((e) => PREFS.debugError("Failed to delete chat session:", e));
@@ -1032,8 +943,11 @@ function mountPanel(host) {
     browseBotLibraryLLM.clearData();
     activeSession = newSession(PREFS.libraryMode);
     activeSavedLength = 0;
-    state.pendingRefs = [];
-    renderChips();
+    tabReferences.clear();
+    tabReferences.renderChips(refsBar, (nextText) => {
+      input.value = nextText;
+      input.focus();
+    });
     renderHistory();
   }
 
@@ -1070,9 +984,7 @@ function mountPanel(host) {
     const slash = before.match(/(^|\s)\/(\w*)$/);
     if (slash)
       return { kind: "slash", filter: slash[2].toLowerCase(), start: caret - slash[2].length - 1 };
-    const at = before.match(/(^|\s)@([^@\n]*)$/);
-    if (at) return { kind: "at", filter: at[2].toLowerCase(), start: caret - at[2].length - 1 };
-    return null;
+    return tabTokenBeforeCaret(input.value, caret);
   }
 
   function paintPopupItems() {
@@ -1108,7 +1020,7 @@ function mountPanel(host) {
         (item) => [item.title, item.description, ...(item.keywords || [])]
       );
     } else {
-      items = fuzzyFilterSort(listTabs(), token.filter, (t) => [t.title, t.url]).slice(0, 8);
+      items = tabReferences.listTabs(token.filter);
     }
     if (items.length === 0) {
       hidePopup();
@@ -1161,8 +1073,6 @@ function mountPanel(host) {
     const item = state.popupItems[index];
     if (!token || !item) return false;
     const caret = input.selectionStart ?? input.value.length;
-    const head = input.value.slice(0, token.start);
-    const after = input.value.slice(caret);
     if (state.popupKind === "slash") {
       if (item.command === "delete" || item.command === "clear") {
         clearInput();
@@ -1178,6 +1088,7 @@ function mountPanel(host) {
         closeLibrary();
       } else if (item.openSessions) {
         input.value = "/continue ";
+        tabReferences.text = input.value;
         try {
           input.setSelectionRange(input.value.length, input.value.length);
         } catch {}
@@ -1188,10 +1099,13 @@ function mountPanel(host) {
         clearInput();
       }
     } else {
-      state.pendingRefs = state.pendingRefs.filter((r) => r.tab !== item.tab);
-      state.pendingRefs.push({ tab: item.tab, title: item.title, url: item.url, icon: item.icon });
-      input.value = `${head}@${item.title} ${after}`;
-      renderChips();
+      const edit = tabReferences.select(item, input.value, caret, token);
+      input.value = edit.text;
+      input.setSelectionRange(edit.caret, edit.caret);
+      tabReferences.renderChips(refsBar, (nextText) => {
+        input.value = nextText;
+        input.focus();
+      });
       autogrow();
     }
     hidePopup();
@@ -1200,7 +1114,12 @@ function mountPanel(host) {
   }
 
   input.addEventListener("input", () => {
-    syncPendingRefs();
+    if (tabReferences.sync(input.value)) {
+      tabReferences.renderChips(refsBar, (nextText) => {
+        input.value = nextText;
+        input.focus();
+      });
+    }
     autogrow();
     refreshPopup();
   });
@@ -1215,8 +1134,11 @@ function mountPanel(host) {
         hidePopup();
       } else if (input.value) {
         clearInput();
-        state.pendingRefs = [];
-        renderChips();
+        tabReferences.clear();
+        tabReferences.renderChips(refsBar, (nextText) => {
+          input.value = nextText;
+          input.focus();
+        });
       } else {
         closeLibrary();
       }
@@ -1269,23 +1191,6 @@ function mountPanel(host) {
     );
   }
 
-  async function resolveRefs(text) {
-    const refs = [];
-    for (const pending of state.pendingRefs) {
-      if (!text.includes(`@${pending.title}`)) continue;
-      const page = await messageManagerAPI.getPageTextContentForTab(pending.tab).catch(() => null);
-      refs.push({
-        title: pending.title,
-        url: page?.url || pending.url,
-        icon: pending.icon || "",
-        text: page?.textContent?.trim()
-          ? page.textContent
-          : `(No readable text extracted from this tab.)`,
-      });
-    }
-    return refs;
-  }
-
   async function handleSend() {
     let text = input.value.trim();
 
@@ -1333,22 +1238,17 @@ function mountPanel(host) {
     libraryRunHost = parseElement(`<div class="bb-run-view"></div>`);
     setStreaming(true);
 
-    let refs = [];
-    try {
-      refs = await resolveRefs(text);
-    } catch (e) {
-      PREFS.debugError("Failed to resolve tab refs:", e);
-    }
-    let prompt = text;
-    for (const ref of refs) {
-      prompt = prompt.split(`@${ref.title}`).join(ref.title);
-    }
-
+    const resolved = await tabReferences.resolve(text, { maxChars: 0 });
+    const { prompt, refs, warnings } = resolved;
+    for (const warning of warnings) addMessage("error", warning);
     addMessage("user", text, refs);
     deleteBtn.hidden = false;
     clearInput();
-    state.pendingRefs = [];
-    renderChips();
+    tabReferences.clear();
+    tabReferences.renderChips(refsBar, (nextText) => {
+      input.value = nextText;
+      input.focus();
+    });
     hidePopup();
 
     messagesEl.appendChild(libraryRunHost);
@@ -1362,6 +1262,7 @@ function mountPanel(host) {
     libraryRunHost.appendChild(aiWrap);
     scrollDown();
 
+    const activity = new ToolActivity();
     const bursts = [];
     let burst = null;
     let toolGen = 0;
@@ -1426,70 +1327,63 @@ function mountPanel(host) {
       segmentText = "";
     };
     const updateToolCallUI = (toolName, status, error = null, args = null, result = null) => {
+      const entry = activity.handle(toolName, status, error, args, result);
       toolGen++;
       const b = ensureBurst();
-      let row;
-      let resultText = "";
-      if (status === "loading") {
+      let row = b.rows.querySelector(`.bb-tool-row[data-activity-id="${entry.id}"]`);
+      if (status === "loading" || !row) {
         b.count++;
         try {
           const built = buildToolRow({
-            status,
-            tool: toolName,
-            label: toolVerb(toolName, status, args),
-            argsText: toolArgsPreview(args),
+            status: entry.status,
+            tool: entry.tool,
+            label: toolVerb(entry.tool, entry.status, args),
+            argsText: entry.argsText,
+            resultText: entry.resultText,
+            secs: entry.status === "loading" ? "" : fmtSecs(entry.elapsedMs),
           });
           row = built.row;
-          row.dataset.tool = toolName;
-          row.dataset.label = toolVerb(toolName, "loading", args);
-          row._startedAt = Date.now();
-          row._argsText = toolArgsPreview(args);
+          row.dataset.activityId = entry.id;
+          row.dataset.tool = entry.tool;
+          row.dataset.label = toolVerb(entry.tool, "loading", args);
+          row._argsText = entry.argsText;
           row._detail = built.detail;
           b.rows.appendChild(row);
           b.rows.appendChild(built.detail);
-          b.activeRow = row;
+          b.activeRow = entry.status === "loading" ? row : null;
         } catch (e) {
           PREFS.debugError(`tool-run: loading row failed for '${toolName}':`, e);
           return;
         }
-      } else {
-        row =
-          b.activeRow?.dataset.tool === toolName
-            ? b.activeRow
-            : [...b.rows.querySelectorAll(".bb-tool-row")]
-                .reverse()
-                .find((el) => el.dataset.tool === toolName && el.dataset.status === "loading") ||
-              b.activeRow;
-        if (!row) {
-          PREFS.debugError(`tool-run: no row for '${toolName}' -> ${status}`);
-          return;
-        }
+      }
+      if (status !== "loading") {
         b.done++;
-        const secs = fmtSecs(Date.now() - (row._startedAt || Date.now()));
+        const secs = fmtSecs(entry.elapsedMs);
         row.querySelector(".bb-tool-row-time").textContent = secs;
-        resultText = error
-          ? `Error: ${typeof error === "string" ? error : error?.message || "failed"}`
-          : snapshotToolResult(result);
-        if (resultText) {
-          row._detail.innerHTML = highlightResult(toolName, row._argsText, resultText);
+        if (entry.resultText) {
+          row._detail.innerHTML = highlightResult(entry.tool, entry.argsText, entry.resultText);
         }
         row._secs = secs;
         b.activeRow = null;
       }
-      row.dataset.tool = toolName;
-      row.dataset.status = status;
-      row.dataset.label = toolVerb(toolName, "loading", args);
-      row.querySelector(".bb-tool-row-label").textContent = toolVerb(toolName, status, args);
-      setStatusIcon(row.querySelector(".bb-tool-row-icon"), status);
+      row.dataset.activityId = entry.id;
+      row.dataset.tool = entry.tool;
+      row.dataset.status = entry.status;
+      row.dataset.label = toolVerb(entry.tool, "loading", args);
+      row.querySelector(".bb-tool-row-label").textContent = toolVerb(entry.tool, entry.status, args);
+      setStatusIcon(row.querySelector(".bb-tool-row-icon"), entry.status);
       if (status !== "loading") {
-        b.log.push({
-          status,
-          tool: toolName,
-          label: row.querySelector(".bb-tool-row-label").textContent,
-          argsText: row._argsText || "",
-          resultText,
-          secs: row._secs || "",
-        });
+        const savedEntry = activity.snapshot().find((candidate) => candidate.id === entry.id);
+        if (savedEntry) {
+          b.log.push({
+            status: savedEntry.status,
+            tool: savedEntry.tool,
+            label: toolVerb(savedEntry.tool, savedEntry.status, args),
+            argsText: savedEntry.argsText,
+            resultText: savedEntry.resultText,
+            secs: `${(savedEntry.elapsedMs / 1000).toFixed(1)}s`,
+          });
+        }
       }
       refreshBurstTitle(b);
       scrollDown();
@@ -1576,10 +1470,11 @@ function mountPanel(host) {
           aiWrap.remove();
         }
       } else {
-        PREFS.debugError("Library send failed:", e);
-        notifyText = `BrowseBot failed: ${extractErrorText(e).slice(0, 160)}`;
+        const reportedError = agentCapabilityError(e, browseBotLibraryLLM.llmProvider) || e;
+        PREFS.debugError("Library send failed:", reportedError);
+        notifyText = `BrowseBot failed: ${extractErrorText(reportedError).slice(0, 160)}`;
         aiWrap.remove();
-        addMessage("error", extractErrorText(e));
+        addMessage("error", extractErrorText(reportedError));
       }
     } finally {
       if (libraryRunController === state.abortController) libraryRunController = null;

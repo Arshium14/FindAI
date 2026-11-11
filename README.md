@@ -1,102 +1,69 @@
-<h1 align="center">Zen Browser UserScripts</h1>
-<div align="center">
-    <a href="https://zen-browser.app/">
-        <img width="240" alt="zen-badge-dark" src="https://raw.githubusercontent.com/heyitszenithyt/zen-browser-badges/fb14dcd72694b7176d141c774629df76af87514e/light/zen-badge-light.png" />
-    </a>
-</div>
+# BrowseBot Arc Agent
 
-Personal customization userscripts and css files for enhancing browsing experience in Zen Browser.
+A BrowseBot-focused fork of BibekBhusal0/zen-custom-js. It preserves the floating AI, URL-bar AI, and Zen Library chat/agent/build surfaces.
 
-## 🌟 Mods
+## Install with Sine
 
-### [Zen Command Palette](/command-palette)
+1. Install Sine in Zen Browser.
+2. Add this repository as a Sine mod repository and install **BrowseBot Arc Agent**.
+3. Restart Zen when Sine requests it. No build, backend, npm install, or search API key is required.
+4. Configure the LLM provider/model and its API key in BrowseBot settings. Web research itself uses the browser's default search engine and needs no separate search key.
 
-Advanced command interface in browser built in URL bar.
+Arc 2.0 may remain enabled. BrowseBot uses its own floating panel and leaves Arc's native findbar, URL bar, sidebar, and browser-stack effects under Arc's control.
 
-https://github.com/user-attachments/assets/999167fa-aa3e-417c-94b5-e40c12e1897e
+## Use
 
-### [Findbar AI/BrowseBot](/findbar-ai)
+- **Ctrl+F:** ordinary native text search; Ask AI opens the floating agent.
+- **Ctrl+Shift+F:** show/hide the persistent floating agent.
+- **URL-bar AI:** existing scoped search/navigation/link opening.
+- **Library:** Chat, Agent, and Build modes with saved Library sessions.
+- **@:** mention one or more open tabs in floating or Library chat; fresh text is read at send time.
+- **Stop:** cancels the active provider request and research/page operations. Hiding the panel or changing tabs does not cancel.
 
-Advanced AI functionality inside browser builtin findbar and URL bar, plus a persistent AI section in the Zen Library with chat/agent modes, slash commands, and @ tab mentions.
+Floating history lasts for the browser session. Library sessions retain their existing persistence.
 
-https://github.com/user-attachments/assets/258d2643-6135-4b2b-accc-c1d59f3f76fc
+## Agent capabilities
 
-### [Reopen Closed Tabs Menu](reopen-closed-tabs)
+### Web research (keyless)
 
-Menu to search through recently closed tabs (and active tabs too).
+The agent searches the internet using the browser's default search engine — no Tavily, Brave, or other search API key is needed. Research opens temporary background tabs, extracts up to 8 search results, and reads up to 3 sources. Every research-owned tab is cleaned up on success, error, and abort. Tabs reused or selected by the user are never closed.
 
-https://github.com/user-attachments/assets/be2880c6-21e5-42ce-b8ed-ed45dc1942ad
+### Page interaction
 
-### [Keyboard Shortcuts Search](/settings-shortcuts-search)
+The agent can inspect page elements, click, type, and press keys in the current or a referenced tab. Typing and submission are state-changing actions that follow BrowseBot's confirmation preference. Read-only inspection needs no approval. Typed values never appear in activity previews, logs, or errors.
 
-Dynamic search and filter for browser settings shortcuts.
+### Tool confirmations
 
-https://github.com/user-attachments/assets/01b14b7b-04a7-49d8-a719-83ad7fc8c603
+Read-only research and inspection run without approval. State-changing actions (click, type, key press, submit) follow the "Confirm before tool call" preference. Declined, timed-out, or failed actions return explicit errors and are never presented as successful. The agent never claims to have searched, read, clicked, typed, or submitted unless the tool returned successfully.
 
-### [Search Engine Select](/search-engine-select)
+### Agent limits
 
-Quick search engine switching with advanced interaction modes.
+- Default: 8 tool-call steps per run.
+- Hard maximum: 12 steps.
+- The old unlimited setting (`maxToolCalls=0`) migrates to 8 on startup.
 
-https://github.com/user-attachments/assets/52a6b810-77ee-4a04-b239-8d59e01478ef
+### Resizing
 
-### [Compact Settings](/compact-settings/)
+The floating panel supports eight-direction resizing (all four edges and all four corners) with pointer capture and rAF-coalesced geometry writes. Dimensions persist across restarts when "Remember Dimensions" is enabled. The panel avoids colliding with the native findbar and URL bar.
 
-Expand sidebar of settings on hover.
+## LLM providers
 
-https://github.com/user-attachments/assets/518c67d2-bb65-44ee-85bd-60d6e1ea5295
+Works out of the box with Pollinations AI (free, no key required). Also supports Anthropic Claude, Google Gemini, xAI Grok, Mistral AI, OpenAI, Cerebras, DeepSeek, OpenRouter, Perplexity, Ollama (local), and any OpenAI-compatible custom endpoint. Configure the provider, model, and API key in BrowseBot settings.
 
-### [Floating Sidebar](/floating-sidebar)
+## Manual verification matrix
 
-Make sidebar floating also option to keep it in left or right.
+After installing, verify in Zen Browser:
 
-https://github.com/user-attachments/assets/40e66251-236d-4766-a53d-dd22ecaa455e
+- [ ] Floating panel persists across tab switches, workspace switches, and Ctrl+F in another tab.
+- [ ] Hiding and reopening the panel does not reset the conversation or cancel an in-flight response.
+- [ ] @-mentioning multiple tabs reads fresh content at send time.
+- [ ] Web research opens and cleans up temporary tabs; results are honest about failures.
+- [ ] Page interaction tools require confirmation for writes; typed values are redacted.
+- [ ] Eight-direction resizing works; dimensions survive restart.
+- [ ] Arc 2.0 native findbar, URL bar, and sidebar are unaffected.
+- [ ] Library Chat/Agent/Build modes work with saved sessions.
+- [ ] No Arc preferences are written in `about:config`.
 
-## Compatibility
+## License
 
-- Zen Browser (Primary Target)
-- Might or might not work on other Firefox based browser
-
-## ⚙️ Installation
-
-### Easy Install via Sine (Recommended)
-
-All scripts are also available through [Sine](https://github.com/CosmoCreeper/Sine).
-
-If you want to install everything(all mods in this reop + some extra scripts) you can paste the repo link:
-
-> [!WARNING]
-> Don't install this directly if you don't understand JavaScript, I would recommend installing it from child repos published in Vertex Mods (most of them available in sine market place as well), to install individual mods.
-> Installing from here will include all the mods, and some of them might still be in development, so bugs and incomplete features are expected.
-
-```md
-https://github.com/BibekBhusal0/zen-custom-js
-```
-
-### Manual Install (`fx-autoconfig`)
-
-For advanced users or those not using Sine or who are willing to contribute:
-
-1.  **Setup `fx-autoconfig`**: If you haven't already, follow the setup instructions at [MrOtherGuy/fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig).
-
-2.  **Clone this Repository**: Open a terminal, navigate to the `JS` directory created by `fx-autoconfig` inside your profile folder:
-
-    ```bash
-    cd /path/to/your/profile/chrome/JS
-    git clone https://github.com/BibekBhusal0/zen-custom-js
-    ```
-
-3.  **Import the Script**: In your JS directory, create a new file `import.uc.mjs` , and import scripts you need. Here is example import file importing each script [import.uc.mjs](./import.uc.mjs).
-
-4.  **Import the Styles**: In your `userChrome.css` file, import the styles of related script. Here is example userChrome file importing all styles [userChrome.css](./userChrome.css).
-
-5.  **Restart Zen Browser**: Restart the browser for all changes to take effect. You might need to clear the startup cache from `about:support`.
-
-## 🤝 Contribution
-
-Whether you have ideas, design changes or even major code changes, help is always welcome. Mods gets better and better with each contribution, no matter how big or small!
-
-If you'd like to get involved, see [CONTRIBUTING.md](./CONTRIBUTING.md) for the code structure, guidelines and best practices.
-
-## 📜 License
-
-This is licensed under MIT license. Check [License](LICENSE) for more details.
+MIT — see [LICENSE](LICENSE) for details. Original work by Bibek Bhusal.

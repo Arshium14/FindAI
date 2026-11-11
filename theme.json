@@ -1,26 +1,20 @@
 {
-  "id": "zen-custom-js",
-  "name": "Zen Custom JS",
-  "description": "My Custom JS and CSS. Contains 6 mods some other scripts to enhance experience with zen browser.",
+  "id": "browse-bot-arc-agent",
+  "name": "BrowseBot Arc Agent",
+  "description": "Persistent Arc-compatible BrowseBot agent for Zen Browser.",
   "preferences": "preferences.json",
-  "homepage": "https://github.com/BibekBhusal0/zen-custom-js",
   "style": {
-    "chrome": "userChrome.css",
-    "content": "userContent.css"
+    "chrome": "userChrome.css"
   },
   "scripts": {
     "import.uc.mjs": {
-      "include": ["chrome://browser/content/browser.xhtml", "chrome://browser/content/browser.xul"]
-    },
-    "import2.uc.mjs": {
-      "include": ["about:preferences*", "about:settings*"]
+      "include": ["chrome://browser/content/browser.xhtml"]
     }
   },
-  "readme": "https://raw.githubusercontent.com/BibekBhusal0/zen-custom-js/main/README.md",
-  "author": "Bibek Bhusal",
+  "author": "Bibek Bhusal and BrowseBot contributors",
   "version": "1.0.0",
-  "tags": ["Scripts", "Zen"],
-  "createdAt": "2024-05-22",
-  "updatedAt": "2026-08-24",
+  "tags": ["AI", "BrowseBot", "Arc", "Zen"],
+  "createdAt": "2026-11-05",
+  "updatedAt": "2026-11-06",
   "fork": ["zen"]
 }

@@ -1,6 +1,6 @@
 # Development and Publishing Workflow
 
-This repository uses GitHub Actions workflows to automate code formatting, linting, and publishing of mods to individual repositories in the [Vertex-Mods](https://github.com/Vertex-Mods) organization.
+This repository uses GitHub Actions workflows to automate code formatting, linting, and publishing of BrowseBot to individual repositories in the [Vertex-Mods](https://github.com/Vertex-Mods) organization.
 
 ## Automated Workflows
 
@@ -14,9 +14,9 @@ This repository uses GitHub Actions workflows to automate code formatting, linti
 
 - **Trigger**: Push to main branch, manual dispatch
 - **Actions**: Single optimized workflow that handles:
-- **Theme Updates**: Updates `updatedAt` field in all `theme.json` files
-- **BrowseBot Build**: Creates 2 files - `browse-bot.uc.mjs` (main) and `vercel-ai-sdk.uc.mjs` (vendor bundle)
-- **Preferences Combination**: Merges all mod `preferences.json` into root `preferences.json`.
+- **Theme Updates**: Updates `updatedAt` field in `theme.json` files
+- **BrowseBot Build**: Creates `browse-bot.uc.mjs`
+- **Preferences Combination**: Merges BrowseBot `preferences.json` into root `preferences.json`.
 - **Formatting**: Runs Prettier on all files
 
 ### 3. Publish Mods (`.github/workflows/publish-mods.yml`)
@@ -80,7 +80,7 @@ The workflow respects the following keys in `theme.json`:
 
 ## BrowseBot Special Handling
 
-The **BrowseBot** mod (`browse-bot`) has specific build logic. Creates 2 files - `browse-bot.uc.mjs` (main code) and `vercel-ai-sdk.uc.mjs` (vendor bundle)
+The **BrowseBot** mod (`browse-bot`) has specific build logic. Creates `browse-bot.uc.mjs` (main code).
 
 ## Sine Store Integration
 

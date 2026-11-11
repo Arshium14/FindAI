@@ -5,7 +5,6 @@
 @import "styles/urlbar.css";
 @import "styles/settings.css";
 @import "library/library.css";
-@import "styles/pseudo-bg.css";
 @import "../utils/code-highlight.css";
 
 :root {
@@ -24,10 +23,5 @@
   @media -moz-pref("extension.browse-bot.findbar-ai.background-style", "acrylic") {
     --browse-bot-dialog-bg: var(--acrylic-glass-bg) !important;
     --browse-bot-dialog-backdrop-filter: blur(32px) brightness(0.7) saturate(2.5);
-  }
-
-  @media -moz-pref("extension.browse-bot.findbar-ai.background-style", "pseudo") {
-    --browse-bot-dialog-bg: transparent !important;
-    --browse-bot-dialog-backdrop-filter: none;
   }
 }

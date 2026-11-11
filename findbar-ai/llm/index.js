@@ -1,5 +1,5 @@
 import { streamText, generateText } from "./client.js";
-import { browseBotFindbar } from "../findbar-ai.uc.js";
+import { getTools, getToolSystemPrompt, toolNameMapping } from "./tools.js";
 import {
   pollinations,
   claude,
@@ -15,7 +15,8 @@ import {
   custom,
 } from "./providers.js";
 import { messageManagerAPI } from "../messageManager.js";
-import { getVideoContext, getYouTubeVideoId } from "./youtube.js";
+import { getVideoContext } from "./youtube.js";
+import { AgentController } from "../agent/controller.js";
 import PREFS from "../utils/prefs.js";
 
 /**
@@ -79,14 +80,14 @@ class LLM {
   }
 
   async generateText(options) {
-    const { prompt, tools, maxSteps, messages, abortSignal } = options;
+    const { prompt, tools, maxSteps, messages, abortSignal, system } = options;
     if (prompt) {
       this.history.push({ role: "user", content: prompt });
     }
 
     const result = await generateText({
       provider: await this.currentProvider.getModelAsync(),
-      system: await this.getSystemPrompt(),
+      system: system ?? await this.getSystemPrompt(),
       messages: messages || this.history,
       tools,
       maxSteps: maxSteps || 1,
@@ -102,7 +103,7 @@ class LLM {
   }
 
   async streamText(options) {
-    const { prompt, onFinish, tools, maxSteps, messages, abortSignal } = options;
+    const { prompt, onFinish, tools, maxSteps, messages, abortSignal, system } = options;
     if (prompt) {
       this.history.push({ role: "user", content: prompt });
     }
@@ -110,7 +111,7 @@ class LLM {
     const self = this;
     return streamText({
       provider: await this.currentProvider.getModelAsync(),
-      system: await this.getSystemPrompt(),
+      system: system ?? await this.getSystemPrompt(),
       messages: messages || this.history,
       tools,
       maxSteps: maxSteps || 1,
@@ -181,76 +182,34 @@ class LLM {
 }
 
 /**
- * An extended LLM class specifically for the BrowseBot Findbar.
- * It manages application-specific states like streaming and citations,
- * and constructs the appropriate system prompts.
+ * An extended LLM class specifically for the BrowseBot floating panel.
+ * It owns application-specific state (current-page context, streaming,
+ * citations) and delegates every run to the shared AgentController, so the
+ * floating panel and the Library Agent surface use one tool, confirmation, and
+ * step-bound contract.
  */
-const pageCitationExamples = `### Citation Examples
 
-Here are some examples demonstrating the correct JSON output format.
+// The floating panel gets the same tool-belt as the Library Agent surface.
+const floatingAgentGroups = [
+  "research",
+  "navigation",
+  "tabs",
+  "pageInteraction",
+  "youtube",
+  "bookmarks",
+  "workspaces",
+  "uiFeedback",
+];
 
-**Example 1: General Question with a List and Multiple Citations**
--   **User Prompt:** "What are the main benefits of using this library?"
--   **Your JSON Response:**
-    \`\`\`json
-    {
-      "answer": "This library offers several key benefits:\n\n*   **High Performance**: It is designed to be fast and efficient for large-scale data processing [1].\n*   **Flexibility**: You can integrate it with various frontend frameworks [2].\n*   **Ease of Use**: The API is well-documented and simple to get started with [3].",
-      "citations": [
-        {
-          "id": 1,
-          "source_quote": "The new architecture provides significant performance gains, especially for large-scale data processing."
-        },
-        {
-          "id": 2,
-          "source_quote": "It is framework-agnostic, offering adapters for React, Vue, and Svelte."
-        },
-        {
-          "id": 3,
-          "source_quote": "Our extensive documentation and simple API make getting started a breeze."
-        }
-      ]
-    }
-    \`\`\`
-
-**Example 2: A Sentence Supported by Two Different Sources**
--   **User Prompt:** "Tell me about the project's history."
--   **Your JSON Response:**
-    \`\`\`json
-    {
-      "answer": "The project was initially created in 2021 [1] and later became open-source in 2022 [2].",
-      "citations": [
-        {
-          "id": 1,
-          "source_quote": "Development began on the initial prototype in early 2021."
-        },
-        {
-          "id": 2,
-          "source_quote": "We are proud to announce that as of September 2022, the project is fully open-source."
-        }
-      ]
-    }
-    \`\`\`
-`;
-
-const videoCitationExample = `### Citation Example
-
-The provided content is a timestamped video transcript. Cite with the segment's time.
-
--   **User Prompt:** "When does the speaker mention the launch date?"
--   **Your JSON Response:**
-    \`\`\`json
-    {
-      "answer": "The speaker announces the launch for March [1].",
-      "citations": [
-        {
-          "id": 1,
-          "source_quote": "we are launching in March",
-          "timestamp": "4:30"
-        }
-      ]
-    }
-    \`\`\`
-`;
+// A bare AbortSignal is still accepted as the second argument by callers that
+// predate the options object (context menu auto-send, native Ask AI).
+function normalizeSendOptions(options) {
+  if (!options) return {};
+  if (typeof options.addEventListener === "function" && typeof options.aborted === "boolean") {
+    return { abortSignal: options };
+  }
+  return options;
+}
 
 class BrowseBotLLM extends LLM {
   constructor() {
@@ -258,6 +217,7 @@ class BrowseBotLLM extends LLM {
     this.systemInstruction = "";
     this.pageContextUrl = null;
     this.pageContextIsVideo = false;
+    this._agentController = null;
   }
 
   get streamEnabled() {
@@ -270,9 +230,43 @@ class BrowseBotLLM extends LLM {
     return PREFS.maxToolCalls;
   }
 
+  // One shared controller per LLM instance, mirroring the Library Agent wiring:
+  // same toolkit, same PREFS-driven step bound, same confirmation contract.
+  get agentController() {
+    if (!this._agentController) {
+      this._agentController = new AgentController(this, {
+        surface: "floating",
+        groups: floatingAgentGroups,
+        getSystemPrompt: () => this.getSystemPrompt(),
+        toolkit: { getTools, getToolSystemPrompt, toolNameMapping },
+        prefs: PREFS,
+      });
+    }
+    return this._agentController;
+  }
+
   async updateSystemPrompt() {
     PREFS.debugLog("Updating system prompt...");
     this.systemInstruction = await this.getSystemPrompt();
+  }
+
+  // Markdown-link citations: one result shape for tool and streaming answers.
+  // Current-page evidence links back to the page URL (the panel highlights the
+  // quoted text on click); research sources are cited with the exact title and
+  // URL a tool returned.
+  getCitationInstructions() {
+    const videoLine = this.pageContextIsVideo
+      ? `
+- **Video transcripts**: the provided content is a timestamped transcript where each line starts with its \`[mm:ss]\` time. Cite the segment time and link it to the video URL with a \`#t=mm:ss\` fragment, e.g. \`[4:30](https://www.youtube.com/watch?v=example#t=4:30)\`. Clicking it seeks the video to that moment.`
+      : "";
+    return `
+
+## Citation Instructions
+- Cite with ordinary Markdown links. Never answer with a JSON object.
+- **Current-page evidence**: for a statement of fact supported by the current page, link a short verbatim quote from that page to the current page URL, e.g. \`[the exact quoted sentence](https://example.com/page)\`. Keep the quote short (one sentence, no line breaks) and identical to the page text, including punctuation and casing. Clicking such a link highlights the quote on the page instead of navigating.
+- **Multiple sources**: repeat the link after the statement instead of merging several quotes into one link.${videoLine}
+- **Research sources**: cite each source with the exact title and URL returned by the research tool, e.g. \`[Article title](https://source.example/story)\`. Never invent a title or URL that a tool did not return, and never cite a source whose result reported an error or empty text.
+- **Do not cite** greetings, your own abilities, or information that came from neither the page nor a tool result.`;
   }
 
   async getSystemPrompt() {
@@ -282,85 +276,39 @@ class BrowseBotLLM extends LLM {
       systemPrompt = PREFS.findbarSystemPrompt + "\n\n";
     }
 
-    systemPrompt += `You are a helpful AI assistant integrated into Zen Browser, a minimal and modern fork of Firefox. Your primary purpose is to answer user questions based on the content of the current webpage.
+    systemPrompt += `You are a helpful AI assistant integrated into Zen Browser, a minimal and modern fork of Firefox. You answer questions about the current webpage and, when asked, act on the browser with tools.
 
 ## Your Instructions:
-- Be concise, accurate, and helpful.`;
+- Be concise, accurate, and helpful.
+- Always answer in normal Markdown. Never reply with a JSON object and never wrap the whole answer in a code fence.`;
 
     if (this.citationsEnabled) {
-      let isVideoPage = false;
-      try {
-        isVideoPage = !!getYouTubeVideoId(messageManagerAPI.getUrlAndTitle().url);
-      } catch {
-        isVideoPage = false;
-      }
-      const videoCitationLine = isVideoPage
-        ? `- **Video transcripts**: The provided content is a timestamped transcript where each line starts with its \`[mm:ss]\` time. Each citation object SHOULD also include a \`"timestamp"\` field with that segment's time (e.g. \`"4:30"\`). Keep writing \`[id]\` markers in the answer; the interface shows each marker as its timestamp, and clicking it seeks the video to that moment.`
-        : "";
-      const citationExamples = isVideoPage ? videoCitationExample : pageCitationExamples;
-      systemPrompt += `
-
-## Citation Instructions
-- **Output Format**: Your entire response **MUST** be a single, valid JSON object with two keys: \`"answer"\` and \`"citations"\`.
-- **Answer**: The \`"answer"\` key holds the conversational text. Use Markdown Syntax for formatting like lists, bolding, etc.
-- **Citations**: The \`"citations"\` key holds an array of citation objects.
-- **When to Cite**: For any statement of fact that is directly supported by the provided page content, you **SHOULD** provide a citation. It is not mandatory for every sentence.
-- **How to Cite**: In your \`"answer"\`, append a marker like \`[1]\`, \`[2]\`. Each marker must correspond to a citation object in the array.
-- **CRITICAL RULES FOR CITATIONS**:
-    1.  **source_quote**: This MUST be the **exact, verbatim, and short** text from the page content.
-    2.  **Accuracy**: The \`"source_quote"\` field must be identical to the text on the page, including punctuation and casing.
-    3.  **Multiple Citations**: If multiple sources support one sentence, format them like \`[1][2]\`, not \`[1,2]\`.
-    4.  **Unique IDs**: Each citation object **must** have a unique \`"id"\` that matches its marker in the answer text.
-    5.  **Short**: The source quote must be short no longer than one sentence and should not contain line brakes.
-- **Do Not Cite**: Do not cite your own abilities, general greetings, or information not from the provided text. Make sure the text is from page text content not from page title or URL.
-${videoCitationLine}
-- **Tool Calls**: If you call a tool, you **must not** provide citations in the same turn.
-
-${citationExamples}
-`;
+      systemPrompt += this.getCitationInstructions();
     }
 
     const { url, title } = messageManagerAPI.getUrlAndTitle();
     systemPrompt += `
-- Strictly base all your answers on the webpage content provided as a separate message in this conversation.
-- If the user's question cannot be answered from the content, state that the information is not available on the page.
+
+## Context
+- The current page content arrives as a separate message in this conversation. Base page answers on that content.
 - Current page: "${title}" (${url})
-- For browser actions like managing tabs, workspaces, bookmarks, or web searches, tell the user to use the BrowseBot Library instead.
-`;
+- If the user references tabs with @mentions, their fresh page content arrives as a separate message. Base answers about those tabs on that content.
+- If the page, the referenced tabs, and your tools cannot answer the question, say so honestly instead of guessing.
+
+## AGENTIC MODE ENABLED - TOOL USAGE:
+You have access to browser functions. The user knows you have these abilities.
+- Call tools silently without narrating each call. Make all the tool calls you need first, then summarize what you did and found afterwards.
+- Use tools when the user explicitly asks, or when it is the only logical way to fulfill their request (e.g., "search for...").
+- Prefer the current page content for page questions; reach for research only when the page cannot answer or the user asks about something beyond it.
+- Only describe a search, read, click, type, key press, or submission after its tool returned success. Report tool errors, declines, and missing information honestly; never invent a tool result.
+- While running tools like \`openLink\`, make sure the URL is valid.
+- Batch independent creates/deletes into one call: \`createBookmark\` takes a bookmarks array, \`deleteBookmark\` takes an ids array, \`createTabFolder\` takes a names array. Never call the same create/delete tool once per item.
+- When the user asks you to manage tabs (close/group/move), read the tabs first and then act instead of asking extra questions.
+- If the user asks you to open a link by its text (e.g., "click the 'About Us' link"), first use \`getHTMLContent()\` to find the link's full URL, then use \`openLink()\`.
+- When asked about your own abilities, describe the functions you can perform based on the tools listed below.
+- **Never** mention tabId, folderId, or workspaceId to the user. Refer to tabs, folders, and workspaces by name, not id.
+- Actions that need approval are asked for by the browser. A declined, timed-out, or failed action is reported as declined or failed, never as completed.`;
     return systemPrompt;
-  }
-
-  parseModelResponseText(responseText) {
-    let answer = responseText;
-    let citations = [];
-
-    if (PREFS.citationsEnabled) {
-      try {
-        // Find the JSON part of the response
-        const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-        const jsonString = jsonMatch ? jsonMatch[1] : responseText;
-        const parsedContent = JSON.parse(jsonString);
-
-        if (typeof parsedContent.answer === "string") {
-          answer = parsedContent.answer;
-          if (Array.isArray(parsedContent.citations)) {
-            citations = parsedContent.citations;
-          }
-        } else {
-          // Parsed JSON but 'answer' field is missing or not a string.
-          PREFS.debugLog("AI response JSON missing 'answer' field or not a string:", parsedContent);
-        }
-      } catch (e) {
-        // JSON parsing failed, keep rawText as answer.
-        PREFS.debugError(
-          "Failed to parse AI message content as JSON:",
-          e,
-          "Raw Text:",
-          responseText
-        );
-      }
-    }
-    return { answer, citations };
   }
 
   async attachPageContext() {
@@ -405,44 +353,20 @@ ${citationExamples}
     this.pageContextIsVideo = isVideo;
   }
 
-  async sendMessage(prompt, abortSignal) {
+  // Floating send path: attach the current-page context of the tab selected at
+  // send time, then delegate to the shared agent controller. This is the only
+  // place page context is attached, so a TabSelect during an active run can
+  // never rewrite that run's context.
+  async sendMessage(prompt, options = {}) {
+    const { refs, abortSignal, confirmTool, onToolStatus } = normalizeSendOptions(options);
     PREFS.debugLog("Current history before sending:", this.history);
-
-    if (this.citationsEnabled) {
-      await this.attachPageContext();
-      const object = await super.generateTextWithCitations({
-        prompt,
-        abortSignal,
-      });
-
-      if (browseBotFindbar?.findbar) {
-        browseBotFindbar.findbar.history = this.getHistory();
-      }
-      return object;
-    }
-
     await this.attachPageContext();
-    if (this.streamEnabled) {
-      const self = this;
-      const streamResult = await super.streamText({ prompt, abortSignal });
-      (async () => {
-        try {
-          await streamResult.text;
-          if (browseBotFindbar?.findbar) {
-            browseBotFindbar.findbar.history = self.getHistory();
-          }
-        } catch (e) {
-          PREFS.debugLog("Stream history sync skipped:", e?.message || e);
-        }
-      })();
-      return streamResult;
-    } else {
-      const result = await super.generateText({ prompt, abortSignal });
-      if (browseBotFindbar?.findbar) {
-        browseBotFindbar.findbar.history = this.getHistory();
-      }
-      return result;
-    }
+    return this.agentController.sendMessage(prompt, {
+      refs,
+      abortSignal,
+      confirmTool,
+      onToolStatus,
+    });
   }
 
   clearData() {

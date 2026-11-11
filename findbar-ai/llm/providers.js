@@ -312,7 +312,7 @@ const openrouter = Object.create(
     apiPref: PREFS.OPENROUTER_API_KEY,
     baseURL: "https://openrouter.ai/api/v1/chat/completions",
     extraHeaders: {
-      "HTTP-Referer": "https://github.com/BibekBhusal0/zen-custom-js",
+      "HTTP-Referer": "https://github.com/Arshium14/FindAI",
       "X-Title": "BrowseBot",
     },
   })

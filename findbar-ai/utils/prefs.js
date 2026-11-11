@@ -1,16 +1,16 @@
 import { PREFS as BasePREFS, resetPref } from "../../utils/pref.js";
+import { normalizeAgentSteps } from "../agent/controller.js";
 
 class BrowseBotPREFS extends BasePREFS {
   static MOD_NAME = "BrowseBot";
   static DEBUG_MODE = "extension.browse-bot.debug-mode";
 
   static ENABLED = "extension.browse-bot.findbar-ai.enabled";
-  static MINIMAL = "extension.browse-bot.findbar-ai.minimal";
-  static PERSIST = "extension.browse-bot.findbar-ai.persist-chat";
   static DND_ENABLED = "extension.browse-bot.findbar-ai.dnd-enabled";
   static POSITION = "extension.browse-bot.findbar-ai.position";
   static REMEMBER_DIMENSIONS = "extension.browse-bot.findbar-ai.remember-dimensions";
   static WIDTH = "extension.browse-bot.findbar-ai.width";
+  static HEIGHT = "extension.browse-bot.findbar-ai.height";
   static STREAM_ENABLED = "extension.browse-bot.findbar-ai.stream-enabled";
   static CITATIONS_ENABLED = "extension.browse-bot.findbar-ai.citations-enabled";
   static MAX_TOOL_CALLS = "extension.browse-bot.library-ai.max-tool-calls";
@@ -79,9 +79,7 @@ class BrowseBotPREFS extends BasePREFS {
     [BrowseBotPREFS.URLBAR_AI_ENABLED]: true,
     [BrowseBotPREFS.URLBAR_AI_HIDE_SUGGESTIONS]: true,
     [BrowseBotPREFS.URLBAR_AI_ANIMATIONS_ENABLED]: true,
-    [BrowseBotPREFS.MINIMAL]: true,
     [BrowseBotPREFS.DEBUG_MODE]: false,
-    [BrowseBotPREFS.PERSIST]: false,
     [BrowseBotPREFS.STREAM_ENABLED]: true,
     [BrowseBotPREFS.CITATIONS_ENABLED]: false,
     [BrowseBotPREFS.CONTEXT_MENU_ENABLED]: true,
@@ -119,7 +117,8 @@ class BrowseBotPREFS extends BasePREFS {
     [BrowseBotPREFS.POSITION]: "top-right",
     [BrowseBotPREFS.REMEMBER_DIMENSIONS]: true,
     [BrowseBotPREFS.WIDTH]: 500,
-    [BrowseBotPREFS.MAX_TOOL_CALLS]: 0,
+    [BrowseBotPREFS.HEIGHT]: 600,
+    [BrowseBotPREFS.MAX_TOOL_CALLS]: 8,
     [BrowseBotPREFS.MAX_CONTEXT_CHARS]: 0,
     [BrowseBotPREFS.CONFIRMATION]: true,
     [BrowseBotPREFS.BACKGROUND_STYLE]: "solid",
@@ -161,6 +160,17 @@ class BrowseBotPREFS extends BasePREFS {
     } catch (e) {
       this.debugError("Could not migrate legacy custom system prompt:", e);
     }
+    for (const dead of [
+      "extension.browse-bot.findbar-ai.minimal",
+      "extension.browse-bot.findbar-ai.persist-chat",
+    ]) {
+      try { resetPref(dead); } catch {}
+    }
+    try {
+      if (this.getPref(this.BACKGROUND_STYLE) === "pseudo") {
+        this.setPref(this.BACKGROUND_STYLE, "solid");
+      }
+    } catch {}
   }
 
   static get enabled() {
@@ -169,14 +179,6 @@ class BrowseBotPREFS extends BasePREFS {
 
   static set enabled(value) {
     this.setPref(this.ENABLED, value);
-  }
-
-  static get minimal() {
-    return this.getPref(this.MINIMAL);
-  }
-
-  static set minimal(value) {
-    this.setPref(this.MINIMAL, value);
   }
 
   static get streamEnabled() {
@@ -235,20 +237,8 @@ class BrowseBotPREFS extends BasePREFS {
     this.setPref(this.LLM_PROVIDER, value);
   }
 
-  static get persistChat() {
-    return this.getPref(this.PERSIST);
-  }
-
-  static set persistChat(value) {
-    this.setPref(this.PERSIST, value);
-  }
-
   static get backgroundStyle() {
     return this.getPref(this.BACKGROUND_STYLE);
-  }
-
-  static get pseudoBg() {
-    return this.backgroundStyle === "pseudo";
   }
 
   static get maxToolCalls() {
@@ -258,22 +248,6 @@ class BrowseBotPREFS extends BasePREFS {
   static set maxToolCalls(value) {
     this.setPref(this.MAX_TOOL_CALLS, value);
   }
-
-  // static get copyBtnEnabled() {
-  //   return this.getPref(this.COPY_BTN_ENABLED);
-  // }
-  //
-  // static set copyBtnEnabled(value) {
-  //   this.setPref(this.COPY_BTN_ENABLED, value);
-  // }
-  //
-  // static get markdownEnabled() {
-  //   return this.getPref(this.MARKDOWN_ENABLED);
-  // }
-  //
-  // static set markdownEnabled(value) {
-  //   this.setPref(this.MARKDOWN_ENABLED, value);
-  // }
 
   static get confirmation() {
     return this.getPref(this.CONFIRMATION);
@@ -313,6 +287,14 @@ class BrowseBotPREFS extends BasePREFS {
 
   static set width(value) {
     this.setPref(this.WIDTH, value);
+  }
+
+  static get height() {
+    return this.getPref(this.HEIGHT);
+  }
+
+  static set height(value) {
+    this.setPref(this.HEIGHT, value);
   }
 
   static get ollamaBaseUrl() {
@@ -487,6 +469,8 @@ class BrowseBotPREFS extends BasePREFS {
       true
     );
     super.setInitialPrefs();
+    const steps = this.getPref(this.MAX_TOOL_CALLS);
+    if (steps === 0 || steps > 12) this.setPref(this.MAX_TOOL_CALLS, normalizeAgentSteps(steps));
   }
 }
 

@@ -1,6 +1,6 @@
 # Code Assistant Context
 
-Collection of user scripts and CSS for Zen Browser (Firefox-based). Each feature is a self-contained directory. Source runs directly in the browser with no build step; single-file `.uc.js`/`.uc.mjs` bundles are produced via Bun for releases only.
+BrowseBot-focused fork of BibekBhusal0/zen-custom-js for Zen Browser (Firefox-based). Source runs directly in the browser with no build step; single-file `.uc.mjs` bundles are produced via Bun for releases only.
 
 **Key technologies**: JavaScript (ESM), CSS, Bun (release tooling only, optional).
 
@@ -13,16 +13,11 @@ Do NOT run `bun build`, `bun format`, `bun lint`, or any CI-related command unle
 Release tooling only (requires the optional Bun install). Never needed for local use or testing, mods run from source.
 
 ```bash
-bun run build              # all mods
+bun run build              # BrowseBot
 bun run build:browsebot    # single: TARGET=browsebot bun build.js
-bun run build:palette
-bun run build:reopen
-bun run build:sidebar
-bun run build:select
-bun run build:search
 
-bun run dev                # watch mode, all mods
-bun run dev:browsebot      # watch a specific mod
+bun run dev                # watch mode
+bun run dev:browsebot      # watch BrowseBot
 
 bun run format             # prettier --write .
 bun run lint               # eslint .
@@ -35,24 +30,18 @@ bun run lint               # eslint .
 - Mods are discovered by scanning subdirectories for `theme.json` + `index.js` + the `scripts` key in theme.json.
 - **Output filename = `theme.id`**, not the directory name. Example: `findbar-ai/` has `id: "browse-bot"` → produces `browse-bot.uc.mjs`.
 - Target matching normalizes both the `TARGET` env var and `theme.id` by removing hyphens, then does a substring check. So `TARGET=browsebot` matches `browse-bot`.
-- Most mods → IIFE bundle (`uc.js`). Browse-bot → ESM bundle (`browse-bot.uc.mjs`, single file, zero npm dependencies).
-- CSS-only mods (e.g., `compact-settings/`) have no `scripts` key in theme.json and are skipped by the build.
-- Scripts in `others/` are not bundled - imported directly in `import.uc.mjs`.
-- `search-engine-icon/` has no `theme.json` at all - loaded directly as a raw import.
+- Browse-bot → ESM bundle (`browse-bot.uc.mjs`, single file, zero npm dependencies).
 - Post-build, `stripDeadMembers` (`.github/scripts/strip-dead-members.js`) removes unreferenced object/class members per bundle (Bun only tree-shakes top-level exports). It rewrites `dist/` output only, never sources, and keeps everything on any uncertain pattern.
 
-## Active mods
+## Active mod
 
 Loaded via `import.uc.mjs`:
 
-- `command-palette/`, `floating-sidebar/`, `reopen-closed-tabs/`, `search-engine-select/`, `search-engine-icon/index.js`
 - `findbar-ai/index.js`
-- `others/tab-explode.js`, `others/invert-pdf.js`
 
 Styles loaded via `userChrome.css`:
 
-- `floating-sidebar/style.css`, `search-engine-select/style.css`, `findbar-ai/style.css`, `command-palette/style.css`, `reopen-closed-tabs/style.css`
-- `css/userChrome.css` (shared utilities)
+- `findbar-ai/style.css`
 
 ## Shared design system
 
@@ -70,7 +59,7 @@ Rules:
 - Never alias variables (`--x: var(--zenux-y)`). Reference `zenux-*` directly. The only exception is behavioral variables like the browse-bot background-style switcher.
 - Interactive classes (`zenux-input`, `zenux-btn-*`, `zenux-icon-btn`) use `!important` throughout because Firefox native and XUL controls need it to lose. Structural classes do not.
 - Browser-made elements (XUL `image`, `toolbarbutton`, `menulist`, findbar/URL bar internals) cannot take classes reliably, or utils selectors do not match them (utils icon rules target HTML `img`/`svg`, never XUL `image`). Style those with local CSS mirroring utils values.
-- `display` toggles for show-on-hover elements stay local (e.g. reopen tab close button), since utils classes force their own display.
+- `display` toggles for show-on-hover elements stay local, since utils classes force their own display.
 - Icons that can be `jar:`/extension URLs must be XUL `image` via `xulImage()` from `utils/parse.js`. HTML `img` throws a Security Error on those in chrome UI. Recolor context icons with `-moz-context-properties: fill, stroke` plus `fill`/`stroke`.
 - Dropdowns use `createCombobox()` from `utils/combobox.js`, never XUL `menulist`. It exposes `.value`, fires `command`, and works with the `data-pref` flow.
 
@@ -117,14 +106,14 @@ Import Firefox modules via `ChromeUtils.importESModule(...)`.
 ## Repository layout
 
 ```
-mod-name/           # each mod is a directory
-  index.js          # entry point (must be named index.js)
-  style.css         # chrome/content styles
-  theme.json        # metadata + id for build output naming
-  preferences.json  # optional, Sine preferences
-  release-notes.md  # optional, for publishing
-utils/              # shared utilities (pref.js, parse.js, zen-design.css, settings-modal.js/css, etc.)
-css/                # shared CSS (userChrome.css, userContent.css)
-others/             # non-bundled scripts, loaded directly
-dist/               # release bundles (gitignored, built by CI at publish time; never needed locally)
+findbar-ai/          # BrowseBot mod directory
+  index.js           # entry point (must be named index.js)
+  style.css          # chrome/content styles
+  theme.json         # metadata + id for build output naming
+  preferences.json   # Sine preferences
+  release-notes.md   # optional, for publishing
+utils/               # shared utilities (pref.js, parse.js, zen-design.css, settings-modal.js/css, etc.)
+tests/               # automated source-level tests (node:test)
+docs/                # specs and plans
+dist/                # release bundles (gitignored, built by CI at publish time; never needed locally)
 ```

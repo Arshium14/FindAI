@@ -3,15 +3,15 @@
 Thank you for considering contributing to **{MOD_NAME}**! We appreciate your help in making this project better.
 
 > [!NOTE]
-> Pull Requests to this GitHub repository will not be merged. This project is maintained in another repository: [BibekBhusal0/zen-custom-js/{MOD_FOLDER}](https://github.com/BibekBhusal0/zen-custom-js/tree/main/{MOD_FOLDER}), please open pull requests there.
+> Pull Requests to this GitHub repository will not be merged. This project is maintained in another repository: [Arshium14/FindAI/{MOD_FOLDER}](https://github.com/Arshium14/FindAI/tree/main/{MOD_FOLDER}), please open pull requests there.
 
 ## How to Contribute
 
 1. **Fork the Source Repository**
    - Fork the upstream repository and clone your fork:
      ```bash
-     git clone https://github.com/your-username/zen-custom-js.git
-     cd zen-custom-js
+     git clone https://github.com/your-username/FindAI.git
+     cd FindAI
      ```
 
 2. **Create a Branch**

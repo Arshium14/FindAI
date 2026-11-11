@@ -1,6 +1,0 @@
-name: zen-config
-
-windows:
-  - editor: nvim :SessionLoad zen-config
-  - ai: opencode
-  - misc:
