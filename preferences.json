@@ -1,11 +1,5 @@
 [
   {
-    "type": "text",
-    "label": "**Browse Bot**",
-    "size": "18px",
-    "margin": "20px 0 10px 0"
-  },
-  {
     "property": "extension.browse-bot.findbar-ai.enabled",
     "label": "Enable Findbar AI",
     "type": "checkbox",

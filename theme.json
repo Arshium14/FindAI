@@ -8,7 +8,7 @@
   },
   "scripts": {
     "import.uc.mjs": {
-      "include": ["chrome://browser/content/browser.xhtml"]
+      "include": ["chrome://browser/content/browser.xhtml", "chrome://browser/content/browser.xul"]
     }
   },
   "author": "Bibek Bhusal and BrowseBot contributors",
