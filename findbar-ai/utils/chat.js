@@ -1,4 +1,5 @@
 import { parseMD } from "./markdown.js";
+import { hydrateMath } from "./math.js";
 import { parseElement } from "../../utils/parse.js";
 
 function messageCopyText(wrap) {
@@ -59,6 +60,7 @@ function attachMessageActions(wrap, { regenerate = true, onRegenerate } = {}) {
 function renderStreamText(contentDiv, fullText) {
   try {
     contentDiv.innerHTML = parseMD(fullText, false);
+    hydrateMath(contentDiv);
   } catch {
     contentDiv.textContent = fullText + "\n\n[Error rendering markdown]";
   }
@@ -93,27 +95,54 @@ function openChatLink(href) {
   } catch {}
 }
 
+async function writeClipboardText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {}
+  // Chrome documents can lack the async clipboard API; use the XPCOM helper.
+  Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString(text);
+}
+
+async function flashCopyButton(button, write) {
+  try {
+    await write();
+    button.textContent = "Copied!";
+    button.classList.add("is-copied");
+  } catch {
+    button.textContent = "Copy failed";
+    button.classList.add("is-error");
+  }
+  setTimeout(() => {
+    if (!button.isConnected) return;
+    button.textContent = "Copy";
+    button.classList.remove("is-copied", "is-error");
+  }, 1500);
+}
+
 async function copyChatCode(copyButton) {
   const codeEl = copyButton.closest(".zh-codeblock")?.querySelector("pre code");
   if (!codeEl) return;
-  try {
-    await navigator.clipboard.writeText(codeEl.textContent);
-    copyButton.textContent = "Copied!";
-  } catch {
-    copyButton.textContent = "Copy failed";
-  }
-  setTimeout(() => {
-    copyButton.textContent = "Copy";
-  }, 1500);
+  await flashCopyButton(copyButton, () => writeClipboardText(codeEl.textContent));
+}
+
+async function copyChatMath(copyButton) {
+  const latex = copyButton.closest(".zh-math")?.getAttribute("data-latex");
+  if (!latex) return;
+  await flashCopyButton(copyButton, () => writeClipboardText(latex));
+}
+
+function handleCopyClick(target) {
+  const copyButton = target.closest?.(".zh-codeblock-copy, .zh-math-copy");
+  if (!copyButton) return false;
+  if (copyButton.classList.contains("zh-math-copy")) copyChatMath(copyButton);
+  else copyChatCode(copyButton);
+  return true;
 }
 
 function attachChatMessageHandlers(container, { onCitation } = {}) {
   container.addEventListener("click", async (e) => {
-    const copyButton = e.target.closest?.(".zh-codeblock-copy");
-    if (copyButton) {
-      copyChatCode(copyButton);
-      return;
-    }
+    if (handleCopyClick(e.target)) return;
     if (onCitation) {
       const citation = e.target.closest?.(".citation-link");
       if (citation) {
@@ -138,11 +167,7 @@ function attachChatMessageHandlers(container, { onCitation } = {}) {
 
   container.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    const copyButton = e.target.closest?.(".zh-codeblock-copy");
-    if (copyButton) {
-      e.preventDefault();
-      copyChatCode(copyButton);
-    }
+    if (handleCopyClick(e.target)) e.preventDefault();
   });
 }
 
@@ -153,6 +178,7 @@ export {
   setStreamingControls,
   openChatLink,
   copyChatCode,
+  copyChatMath,
   attachChatMessageHandlers,
   messageCopyText,
   copyChatMessage,

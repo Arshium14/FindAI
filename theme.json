@@ -12,9 +12,9 @@
     }
   },
   "author": "Bibek Bhusal and BrowseBot contributors",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "tags": ["AI", "BrowseBot", "Arc", "Zen"],
   "createdAt": "2026-11-05",
-  "updatedAt": "2026-11-06",
+  "updatedAt": "2026-11-10",
   "fork": ["zen"]
 }

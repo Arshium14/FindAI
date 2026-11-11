@@ -412,9 +412,10 @@ function mountPanel(host) {
     }
   }
 
-  function persistSession() {
+  function persistSession(force = false) {
     const messages = browseBotLibraryLLM.getHistory();
-    if (messages.length === 0 || messages.length === activeSavedLength) return;
+    if (messages.length === 0) return;
+    if (!force && messages.length === activeSavedLength) return;
     const session = getActiveSession();
     session.messages = messages;
     if (!session.title) session.title = sessionTitle(messages);
@@ -435,7 +436,7 @@ function mountPanel(host) {
     if (!Array.isArray(activeSession.toolRuns)) activeSession.toolRuns = [];
     browseBotLibraryLLM.setHistory(activeSession.messages);
     activeSavedLength = activeSession.messages.length;
-    setMode(s.mode, { fork: false });
+    setMode(s.mode, { persist: false });
     renderHistory();
     refreshBuildBar();
     scrollDown();
@@ -901,19 +902,13 @@ function mountPanel(host) {
     shownSessionId = session.id;
   }
 
-  function setMode(mode, { fork = true } = {}) {
+  function setMode(mode, { persist = true } = {}) {
     if (!MODES.includes(mode)) return;
-    if (fork && browseBotLibraryLLM.getHistory().length > 0 && getActiveSession().mode !== mode) {
-      abortRun();
-      persistSession();
-      activeSession = newSession(mode);
-      activeSavedLength = 0;
-      browseBotLibraryLLM.clearData();
-      renderHistory();
-    } else {
-      getActiveSession().mode = mode;
-    }
+    // Switch in place: the conversation carries over and the new mode applies
+    // to the next send. Forking a fresh session here used to lose history.
+    getActiveSession().mode = mode;
     PREFS.libraryMode = mode;
+    if (persist) persistSession(true);
     modeButtons.forEach((btn) => btn.classList.toggle("is-active", btn.dataset.mode === mode));
     hidePopup();
     refreshBuildBar();

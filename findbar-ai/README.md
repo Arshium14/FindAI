@@ -138,7 +138,7 @@ BrowseBot integrates with [Zen Command Palette](https://github.com/Vertex-Mods/Z
 
 ### Automated (passed)
 
-74 Node.js tests cover: agent controller bounds/cancellation/system override, tab reference parsing/resolution/redaction, tool activity redaction, keyless research limits/cleanup/abort, page interaction keys/submission/redaction, panel geometry (8-dir resize, collision, coalescing, persistence), and packaging/scope assertions. All 17 source files pass `node --check`. All 5 JSON metadata files are valid.
+105 Node.js tests cover: agent controller bounds/cancellation/system override, tab reference parsing/resolution/redaction, tool activity redaction, keyless research limits/cleanup/abort, page interaction keys/submission/redaction, panel geometry (8-dir resize, collision, coalescing, persistence), markdown math segmentation/currency guards/escaping, KaTeX hydration, mode-switch history preservation, and packaging/scope assertions. All source files pass `node --check`. All JSON metadata files are valid.
 
 ### Manual (pending — requires Zen Browser)
 
@@ -153,6 +153,10 @@ The following checks require a live Zen Browser instance with Sine and were **no
 - [ ] Eight-direction resizing works; dimensions survive restart.
 - [ ] Arc 2.0 native findbar, URL bar, and sidebar are unaffected.
 - [ ] No Arc preferences are written in `about:config`.
+- [ ] Math (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`) renders via KaTeX in both the floating panel and Library; currency like `$5 to $10` stays plain text.
+- [ ] Copy buttons beside math copy the raw LaTeX; code block copy buttons still work; both show "Copied!" feedback.
+- [ ] If KaTeX assets fail to load, math stays visible as raw LaTeX with a working copy button.
+- [ ] Switching Chat/Agent/Build keeps the current conversation; the new mode applies to the next message.
 
 ## 🔧 Customization
 

@@ -1264,3 +1264,111 @@
 .markdown-body pre {
   background-color: var(--bgColor-default);
 }
+
+/* LaTeX math: raw-LaTeX fallback until KaTeX hydrates, copy button beside it. */
+.markdown-body .zh-math {
+  position: relative;
+}
+
+.markdown-body .zh-math:not(.zh-math-display) {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 2px;
+  vertical-align: middle;
+}
+
+.markdown-body .zh-math-display {
+  display: block;
+  margin: 0 0 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--zenux-border-soft);
+  border-radius: var(--zenux-radius-m);
+  background: light-dark(rgba(20, 20, 22, 0.035), rgba(0, 0, 0, 0.32));
+  overflow: auto;
+}
+
+.markdown-body .zh-math .katex {
+  font-size: 1.06em;
+}
+
+.markdown-body .zh-math-display .katex-display {
+  margin: 0;
+}
+
+.markdown-body .zh-math:not(.is-rendered) .zh-math-body {
+  font-family: var(--zenux-mono);
+  font-size: 0.85em;
+  color: var(--zenux-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.markdown-body .zh-math.is-error .zh-math-body {
+  color: var(--zenux-warning);
+}
+
+.markdown-body .zh-math-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  font-family: var(--zenux-font) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  color: var(--zenux-muted) !important;
+  background: var(--zenux-surface) !important;
+  border: 1px solid var(--zenux-border-soft) !important;
+  border-radius: var(--zenux-radius-s) !important;
+  padding: 3px 7px !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  user-select: none;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+}
+
+.markdown-body .zh-math:not(.zh-math-display) .zh-math-copy {
+  top: -12px;
+  right: -8px;
+}
+
+.markdown-body .zh-math:hover .zh-math-copy,
+.markdown-body .zh-math-copy:focus-visible {
+  opacity: 1;
+}
+
+.markdown-body .zh-math-display .zh-math-copy {
+  opacity: 0.75;
+}
+
+.markdown-body .zh-math-display:hover .zh-math-copy {
+  opacity: 1;
+}
+
+.markdown-body .zh-math-copy:hover {
+  color: var(--zenux-text) !important;
+  background-color: var(--zenux-surface-hover) !important;
+}
+
+.markdown-body .zh-math-copy.is-copied {
+  opacity: 1;
+  color: var(--zenux-success) !important;
+  border-color: var(--zenux-success) !important;
+}
+
+.markdown-body .zh-math-copy.is-error {
+  opacity: 1;
+  color: var(--zenux-danger) !important;
+  border-color: var(--zenux-danger) !important;
+}
+
+.markdown-body .zh-codeblock-copy.is-copied {
+  color: var(--zenux-success) !important;
+}
+
+.markdown-body .zh-codeblock-copy.is-error {
+  color: var(--zenux-danger) !important;
+}
